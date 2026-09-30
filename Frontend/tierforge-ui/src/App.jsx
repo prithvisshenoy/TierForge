@@ -8,18 +8,44 @@ import {
   Typography,
 } from "@mui/material";
 import CloudUploadOutlinedIcon from "@mui/icons-material/CloudUploadOutlined";
+import { REQUIRED_CSV_HEADERS } from "./constants";
+import Papa from "papaparse";
 
 import "./App.css";
 
 function App() {
   const [file, setFile] = useState(null);
+  const [error, setError] = useState('');
+  const [success, setSuccess] = useState(false);
 
   const handleFileChange = (event) => {
     const selectedFile = event.target.files?.[0];
-
+   
+    if (!selectedFile) return;
+   
     if (selectedFile) {
       setFile(selectedFile);
     }
+
+     Papa.parse(selectedFile, {
+      preview: 1, 
+      header: true,
+      complete: (results) => {
+        const uploadedColumns = results.meta.fields || [];
+        
+        const missingColumns = REQUIRED_CSV_HEADERS.filter(
+          (col) => !uploadedColumns.includes(col?.toLowerCase())
+        );
+
+        if (missingColumns.length > 0) {
+          setError(`Missing required columns: ${missingColumns.join(', ')}`);
+          setSuccess(false);
+        } else {
+          setError('');
+          setSuccess(true);
+        }
+      },
+    });
   };
 
   const handleSubmit = () => {
@@ -62,6 +88,8 @@ function App() {
                 onChange={handleFileChange}
                 accept=".csv"
               />
+
+              {error && <p style={{ color: 'red' }}>{error}</p>}
             </Button>
 
             {file && (
@@ -80,7 +108,7 @@ function App() {
               variant="contained"
               className="submit-button"
               fullWidth
-              disabled={!file}
+              disabled={!file || error}
               onClick={handleSubmit}
             >
               Submit

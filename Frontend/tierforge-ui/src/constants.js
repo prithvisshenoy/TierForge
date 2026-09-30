@@ -1,0 +1,1 @@
+export const REQUIRED_CSV_HEADERS = ['store_id', 'store_name', 'address', 'city', 'state', 'country'];
