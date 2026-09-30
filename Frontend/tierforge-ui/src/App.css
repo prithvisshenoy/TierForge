@@ -1,0 +1,124 @@
+#upload-page {
+  min-height: 100vh;
+  min-height: 100svh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 20px;
+}
+
+.upload-card {
+  padding: 48px;
+  border: 1px solid var(--border);
+  border-radius: 16px !important;
+  background: var(--bg) !important;
+  box-shadow: var(--shadow);
+  text-align: center;
+}
+
+.upload-icon {
+  width: 72px;
+  height: 72px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 16px;
+  color: var(--accent);
+  background: var(--accent-bg);
+  border: 1px solid var(--accent-border);
+}
+
+.upload-icon svg {
+  font-size: 36px;
+}
+
+.upload-title {
+  font-family: var(--heading) !important;
+  font-size: 32px !important;
+  font-weight: 500 !important;
+  line-height: 118% !important;
+  color: var(--text-h) !important;
+  margin-bottom: 8px !important;
+}
+
+.upload-description {
+  font-size: 16px !important;
+  color: var(--text) !important;
+}
+
+.upload-button {
+  height: 52px !important;
+  color: var(--text-h) !important;
+  border-color: var(--border) !important;
+  border-radius: 8px !important;
+  background: var(--social-bg) !important;
+  font-size: 16px !important;
+  text-transform: none !important;
+}
+
+.upload-button:hover {
+  border-color: var(--accent-border) !important;
+  background: var(--accent-bg) !important;
+  box-shadow: var(--shadow);
+}
+
+.upload-button .MuiSvgIcon-root {
+  color: var(--accent);
+}
+
+.selected-file {
+  width: 100%;
+  padding: 14px 16px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--social-bg);
+  text-align: left;
+}
+
+.selected-file-label {
+  font-size: 13px !important;
+  color: var(--text) !important;
+  margin-bottom: 4px !important;
+}
+
+.selected-file-name {
+  font-size: 15px !important;
+  font-weight: 500 !important;
+  color: var(--text-h) !important;
+  word-break: break-word;
+}
+
+.submit-button {
+  height: 52px !important;
+  border-radius: 8px !important;
+  background: var(--accent) !important;
+  color: white !important;
+  font-size: 16px !important;
+  font-weight: 500 !important;
+  text-transform: none !important;
+  box-shadow: none !important;
+}
+
+.submit-button:hover {
+  background: #962de6 !important;
+  box-shadow: var(--shadow) !important;
+}
+
+.submit-button.Mui-disabled {
+  color: rgba(107, 99, 117, 0.6) !important;
+  background: var(--code-bg) !important;
+}
+
+@media (max-width: 600px) {
+  #upload-page {
+    padding: 24px 16px;
+  }
+
+  .upload-card {
+    padding: 32px 24px;
+  }
+
+  .upload-title {
+    font-size: 28px !important;
+  }
+}
