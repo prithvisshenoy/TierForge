@@ -10,6 +10,7 @@ class JobStatus(str, enum.Enum):
     FAILED = "FAILED"
 
 class TierCalculationRequest(BaseModel):
+    job_id: int
     footfall_bar: int
     footfall_weight: int        
     revenue_bar: int    

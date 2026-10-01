@@ -27,6 +27,7 @@ CREATE TABLE IF NOT EXISTS jobs (
 CREATE TABLE IF NOT EXISTS enrichments (
 	id INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
 	store_id VARCHAR(100) NOT NULL,
+	job_id INT,
 	est_monthly_footfall BIGINT,
 	est_monthly_revenue DECIMAL,
 	store_size_sqft BIGINT,
