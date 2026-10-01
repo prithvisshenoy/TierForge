@@ -16,7 +16,20 @@ def _db_update_status(table: str, status: str, record_id: int):
         {"status": status, "now": datetime.utcnow(), "id": record_id}
     )
 
-def _db_save_enrichment_success(store_id: int, data: dict):
+def _db_update_enrichment_status(job_id: int, store_id: str, status: str):
+    execute_statement(
+        """UPDATE enrichments
+           SET status = :status, updated_at = :now
+           WHERE job_id = :job_id AND store_id = :store_id""",
+        {
+            "status": status,
+            "now": datetime.utcnow(),
+            "job_id": job_id,
+            "store_id": store_id,
+        },
+    )
+
+def _db_save_enrichment_success(job_id: int, store_id: str, data: dict):
     execute_statement(
         """
         UPDATE enrichments 
@@ -26,21 +39,30 @@ def _db_save_enrichment_success(store_id: int, data: dict):
             status = 'COMPLETED',
             last_error = NULL,
             updated_at = :now
-        WHERE store_id = :store_id;
+        WHERE job_id = :job_id AND store_id = :store_id;
         """,
         {
             "footfall": data.get("estimated_monthly_footfall"),
             "revenue": data.get("estimated_monthly_revenue"),
             "size_sqft": data.get("store_size_sqft"),
             "now": datetime.utcnow(),
-            "store_id": store_id
+            "job_id": job_id,
+            "store_id": store_id,
         }
     )
 
-def _db_record_retry_error(store_id: int, attempt: int, err: str):
+def _db_record_retry_error(job_id: int, store_id: str, attempt: int, err: str):
     execute_statement(
-        "UPDATE enrichments SET retry_count = :attempt, last_error = :err, updated_at = :now WHERE store_id = :store_id",
-        {"attempt": attempt, "err": err, "now": datetime.utcnow(), "store_id": store_id}
+        """UPDATE enrichments
+           SET retry_count = :attempt, last_error = :err, updated_at = :now
+           WHERE job_id = :job_id AND store_id = :store_id""",
+        {
+            "attempt": attempt,
+            "err": err,
+            "now": datetime.utcnow(),
+            "job_id": job_id,
+            "store_id": store_id,
+        },
     )
 
 def _sync_job_progress_from_db(job_id: int):
@@ -54,8 +76,8 @@ def _sync_job_progress_from_db(job_id: int):
                 COUNT(DISTINCT (s.store_id)) FILTER (WHERE e.status = 'COMPLETED') AS success_count,
                 COUNT(DISTINCT (s.store_id)) FILTER (WHERE e.status = 'FAILED') AS failed_count
             FROM stores s
-            JOIN enrichments e ON e.store_id = s.store_id
-            WHERE e.job_id = :job_id
+            JOIN enrichments e ON e.store_id = s.store_id AND e.job_id = s.job_id
+            WHERE s.job_id = :job_id
         ) counts
         WHERE j.id = :job_id;
     """
@@ -73,7 +95,12 @@ async def enrich_single_store(
         "city": store["city"],
         "state": store["state"]
     }
-    await asyncio.to_thread(_db_update_status, "enrichments", "PROCESSING", store["enrichment_id"])
+    await asyncio.to_thread(
+        _db_update_enrichment_status,
+        store["job_id"],
+        store["store_id"],
+        "PROCESSING",
+    )
 
     backoff = 1.0
 
@@ -88,11 +115,22 @@ async def enrich_single_store(
 
                 if response.status_code == 200:
                     data = response.json()
-                    await asyncio.to_thread(_db_save_enrichment_success, store["store_id"], data)
+                    await asyncio.to_thread(
+                        _db_save_enrichment_success,
+                        store["job_id"],
+                        store["store_id"],
+                        data,
+                    )
                     return True
 
                 last_err = f"HTTP {response.status_code}: {response.text[:200]}"
-                await asyncio.to_thread(_db_record_retry_error, store["store_id"], attempt, last_err)
+                await asyncio.to_thread(
+                    _db_record_retry_error,
+                    store["job_id"],
+                    store["store_id"],
+                    attempt,
+                    last_err,
+                )
 
                 if attempt < MAX_RETRIES:
                     await asyncio.sleep(backoff)
@@ -100,13 +138,24 @@ async def enrich_single_store(
 
             except (httpx.TimeoutException, httpx.RequestError) as exc:
                 last_err = f"Request error: {str(exc)[:200]}"
-                await asyncio.to_thread(_db_record_retry_error, store["store_id"], attempt, last_err)
+                await asyncio.to_thread(
+                    _db_record_retry_error,
+                    store["job_id"],
+                    store["store_id"],
+                    attempt,
+                    last_err,
+                )
 
                 if attempt < MAX_RETRIES:
                     await asyncio.sleep(backoff)
                     backoff *= 2
                     
-        await asyncio.to_thread(_db_update_status, "enrichments", "FAILED", store["enrichment_id"])
+        await asyncio.to_thread(
+            _db_update_enrichment_status,
+            store["job_id"],
+            store["store_id"],
+            "FAILED",
+        )
         return False
 
 
@@ -114,7 +163,7 @@ def _fetch_job_stores(job_id: int):
     return execute_query(
         """
         SELECT 
-            s.id AS store_pk,
+            s.job_id,
             s.store_id,
             s.store_name,
             s.address,
@@ -122,7 +171,7 @@ def _fetch_job_stores(job_id: int):
             s.state,
             e.id AS enrichment_id
         FROM stores s
-        JOIN enrichments e ON e.store_id = s.store_id
+        JOIN enrichments e ON e.store_id = s.store_id AND e.job_id = s.job_id
         WHERE s.job_id = :job_id;
         """,
         {"job_id": job_id}
