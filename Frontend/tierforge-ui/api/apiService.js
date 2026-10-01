@@ -26,3 +26,9 @@ export const getJobStatus = async (jobId) => {
 
   return response.data;
 };
+
+export const getTiers = async (payload) => { 
+    const response = await api.post(tierApi, payload ); 
+        
+    return response.data; 
+};
