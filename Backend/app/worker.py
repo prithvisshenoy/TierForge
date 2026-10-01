@@ -112,7 +112,7 @@ async def run_batch_enrichment_job(job_id: int):
                 s.state,
                 e.id AS enrichment_id
             FROM stores s
-            JOIN enrichments e ON e.store_id = s.id
+            JOIN enrichments e ON e.store_id = s.store_id
             WHERE s.job_id = :job_id;
             """,
             {"job_id": job_id}
@@ -135,7 +135,6 @@ async def run_batch_enrichment_job(job_id: int):
                 success_count = sum(1 for r in results if r)
                 failed_count = len(results) - success_count
 
-                # Update job progress counter
                 execute_statement(
                     """
                     UPDATE jobs 
@@ -152,7 +151,6 @@ async def run_batch_enrichment_job(job_id: int):
                     }
                 )
 
-        # Mark job complete
         now = datetime.utcnow()
         execute_statement(
             """

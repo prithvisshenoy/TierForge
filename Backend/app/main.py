@@ -9,6 +9,8 @@ from loguru import logger
 from celery.result import AsyncResult
 import asyncio
 from datetime import datetime   
+from models.models import TierCalculationRequest
+from service import fetch_job_status, calculate_scores_and_tiers
 
 app = FastAPI()
 
@@ -79,7 +81,7 @@ async def upload_file(background_tasks: BackgroundTasks, file: UploadFile = File
     bulk_store_sql = f"""
         INSERT INTO stores (store_id, store_name, address, city, state, country, job_id, created_at)
         VALUES {', '.join(store_value_clauses)}
-        RETURNING id;
+        RETURNING store_id;
     """
     inserted_stores = db_utils.execute_insert_returning(bulk_store_sql, store_params)
 
@@ -88,7 +90,7 @@ async def upload_file(background_tasks: BackgroundTasks, file: UploadFile = File
 
     for idx, store_row in enumerate(inserted_stores):
         enrichment_value_clauses.append(f"(:store_id_{idx}, 'PENDING', 0, :now, :now)")
-        enrichment_params[f"store_id_{idx}"] = store_row["id"]
+        enrichment_params[f"store_id_{idx}"] = store_row["store_id"]
 
     bulk_enrichment_sql = f"""
         INSERT INTO enrichments (store_id, status, retry_count, created_at, updated_at)
@@ -108,5 +110,19 @@ async def upload_file(background_tasks: BackgroundTasks, file: UploadFile = File
     
 @app.get("/job/{job_id}")
 async def get_job_status(job_id: str):
-    job_status = db_utils.execute_query(f"SELECT * FROM jobs WHERE id: job_id", {"job_id": job_id})
-    return {"job_status": job_status.status, "total_records": job_status.total_records, "successful_records": job_status.successful_records, "failed_records": job_status.failed_records, "total_records": job_status.total_records}
+    job_data = await asyncio.to_thread(fetch_job_status, job_id)
+
+    if not job_data:
+        raise HTTPException(status_code=404, detail=f"Job with ID {job_id} not found")
+        
+    return job_data
+
+@app.post("/tiers")
+async def create_tier(payload: TierCalculationRequest):
+    try:
+        result = await asyncio.to_thread(calculate_scores_and_tiers, payload)
+
+        return result
+
+    except Exception as e:
+        logger.error(f"Error in /tiers endpoint: {str(e)}")
