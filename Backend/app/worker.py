@@ -9,6 +9,41 @@ MAX_CONCURRENCY = 5
 MAX_RETRIES = 3
 TIMEOUT_SECONDS = 5.0
 
+def _db_update_status(table: str, status: str, record_id: int):
+    """Synchronous helper function to run in a thread."""
+    execute_statement(
+        f"UPDATE {table} SET status = :status, updated_at = :now WHERE id = :id",
+        {"status": status, "now": datetime.utcnow(), "id": record_id}
+    )
+
+def _db_save_enrichment_success(enrichment_id: int, data: dict):
+    execute_statement(
+        """
+        UPDATE enrichments 
+        SET est_monthly_footfall = :footfall,
+            est_monthly_revenue = :revenue,
+            store_size_sqft = :size_sqft,
+            status = 'COMPLETED',
+            last_error = NULL,
+            updated_at = :now
+        WHERE id = :id;
+        """,
+        {
+            "footfall": data.get("estimated_monthly_footfall"),
+            "revenue": data.get("estimated_monthly_revenue"),
+            "size_sqft": data.get("store_size_sqft"),
+            "now": datetime.utcnow(),
+            "id": enrichment_id
+        }
+    )
+
+def _db_record_retry_error(enrichment_id: int, attempt: int, err: str):
+    execute_statement(
+        "UPDATE enrichments SET retry_count = :attempt, last_error = :err, updated_at = :now WHERE id = :id",
+        {"attempt": attempt, "err": err, "now": datetime.utcnow(), "id": enrichment_id}
+    )
+
+
 async def enrich_single_store(
     store: dict, 
     client: httpx.AsyncClient, 
@@ -21,11 +56,7 @@ async def enrich_single_store(
         "city": store["city"],
         "state": store["state"]
     }
-
-    execute_statement(
-        "UPDATE enrichments SET status = 'PROCESSING', updated_at = :now WHERE id = :enrichment_id",
-        {"now": datetime.utcnow(), "enrichment_id": store["enrichment_id"]}
-    )
+    await asyncio.to_thread(_db_update_status, "enrichments", "PROCESSING", store["enrichment_id"])
 
     backoff = 1.0
 
@@ -40,88 +71,75 @@ async def enrich_single_store(
 
                 if response.status_code == 200:
                     data = response.json()
-                    execute_statement(
-                        """
-                        UPDATE enrichments 
-                        SET est_monthly_footfall = :footfall,
-                            est_monthly_revenue = :revenue,
-                            store_size_sqft = :size_sqft,
-                            status = 'COMPLETED',
-                            last_error = NULL,
-                            updated_at = :now
-                        WHERE id = :enrichment_id;
-                        """,
-                        {
-                            "footfall": data.get("estimated_monthly_footfall"),
-                            "revenue": data.get("estimated_monthly_revenue"),
-                            "size_sqft": data.get("store_size_sqft"),
-                            "now": datetime.utcnow(),
-                            "enrichment_id": store["enrichment_id"]
-                        }
-                    )
+                    await asyncio.to_thread(_db_save_enrichment_success, store["enrichment_id"], data)
                     return True
 
-                # Transient failure (e.g. 429 Rate Limit or 5xx Server Error)
                 last_err = f"HTTP {response.status_code}: {response.text[:200]}"
-                execute_statement(
-                    "UPDATE enrichments SET retry_count = :attempt, last_error = :err, updated_at = :now WHERE id = :enrichment_id",
-                    {"attempt": attempt, "err": last_err, "now": datetime.utcnow(), "enrichment_id": store["enrichment_id"]}
-                )
+                await asyncio.to_thread(_db_record_retry_error, store["enrichment_id"], attempt, last_err)
 
                 if attempt < MAX_RETRIES:
                     await asyncio.sleep(backoff)
-                    backoff *= 2  # Exponential backoff
+                    backoff *= 2
 
             except (httpx.TimeoutException, httpx.RequestError) as exc:
                 last_err = f"Request error: {str(exc)[:200]}"
-                execute_statement(
-                    "UPDATE enrichments SET retry_count = :attempt, last_error = :err, updated_at = :now WHERE id = :enrichment_id",
-                    {"attempt": attempt, "err": last_err, "now": datetime.utcnow(), "enrichment_id": store["enrichment_id"]}
-                )
+                await asyncio.to_thread(_db_record_retry_error, store["enrichment_id"], attempt, last_err)
 
                 if attempt < MAX_RETRIES:
                     await asyncio.sleep(backoff)
                     backoff *= 2
 
         # Retries exhausted -> Mark FAILED
-        execute_statement(
-            "UPDATE enrichments SET status = 'FAILED', updated_at = :now WHERE id = :enrichment_id",
-            {"now": datetime.utcnow(), "enrichment_id": store["enrichment_id"]}
-        )
+        await asyncio.to_thread(_db_update_status, "enrichments", "FAILED", store["enrichment_id"])
         return False
 
 
+def _fetch_job_stores(job_id: int):
+    return execute_query(
+        """
+        SELECT 
+            s.id AS store_pk,
+            s.store_id,
+            s.store_name,
+            s.address,
+            s.city,
+            s.state,
+            e.id AS enrichment_id
+        FROM stores s
+        JOIN enrichments e ON e.store_id = s.store_id
+        WHERE s.job_id = :job_id;
+        """,
+        {"job_id": job_id}
+    )
+
+def _update_job_counters(job_id: int, success_count: int, failed_count: int):
+    execute_statement(
+        """
+        UPDATE jobs 
+        SET successful_records = successful_records + :success,
+            failed_records = failed_records + :failed,
+            updated_at = :now
+        WHERE id = :job_id;
+        """,
+        {
+            "success": success_count,
+            "failed": failed_count,
+            "now": datetime.utcnow(),
+            "job_id": job_id
+        }
+    )
+
+
 async def run_batch_enrichment_job(job_id: int):
-    """Background engine orchestrating store enrichment jobs in batches."""
+    """Entry point for FastAPI BackgroundTasks."""
     try:
         now = datetime.utcnow()
-        execute_statement(
-            "UPDATE jobs SET status = 'PROCESSING', updated_at = :now WHERE id = :job_id",
-            {"now": now, "job_id": job_id}
-        )
+        await asyncio.to_thread(_db_update_status, "jobs", "PROCESSING", job_id)
 
-        # Fetch all stores and enrichment IDs for this job
-        stores = execute_query(
-            """
-            SELECT 
-                s.id AS store_pk,
-                s.store_id,
-                s.store_name,
-                s.address,
-                s.city,
-                s.state,
-                e.id AS enrichment_id
-            FROM stores s
-            JOIN enrichments e ON e.store_id = s.store_id
-            WHERE s.job_id = :job_id;
-            """,
-            {"job_id": job_id}
-        )
-
+        stores = await asyncio.to_thread(_fetch_job_stores, job_id)
         semaphore = asyncio.Semaphore(MAX_CONCURRENCY)
 
         async with httpx.AsyncClient() as client:
-            # Chunk records into batches
             for i in range(0, len(stores), BATCH_SIZE):
                 batch = stores[i : i + BATCH_SIZE]
                 
@@ -135,36 +153,12 @@ async def run_batch_enrichment_job(job_id: int):
                 success_count = sum(1 for r in results if r)
                 failed_count = len(results) - success_count
 
-                execute_statement(
-                    """
-                    UPDATE jobs 
-                    SET successful_records = successful_records + :success,
-                        failed_records = failed_records + :failed,
-                        updated_at = :now
-                    WHERE id = :job_id;
-                    """,
-                    {
-                        "success": success_count,
-                        "failed": failed_count,
-                        "now": datetime.utcnow(),
-                        "job_id": job_id
-                    }
-                )
+                await asyncio.to_thread(_update_job_counters, job_id, success_count, failed_count)
 
-        now = datetime.utcnow()
         execute_statement(
-            """
-            UPDATE jobs 
-            SET status = 'COMPLETED',
-                completed_at = :now,
-                updated_at = :now
-            WHERE id = :job_id;
-            """,
-            {"now": now, "job_id": job_id}
+            "UPDATE jobs SET status = 'COMPLETED', completed_at = :now, updated_at = :now WHERE id = :job_id",
+            {"now": datetime.utcnow(), "job_id": job_id}
         )
 
     except Exception:
-        execute_statement(
-            "UPDATE jobs SET status = 'FAILED', updated_at = :now WHERE id = :job_id",
-            {"now": datetime.utcnow(), "job_id": job_id}
-        )
+        await asyncio.to_thread(_db_update_status, "jobs", "FAILED", job_id)
