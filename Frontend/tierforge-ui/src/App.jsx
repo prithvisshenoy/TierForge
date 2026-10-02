@@ -1,41 +1,25 @@
 import { useState } from "react";
-import {
-  Box,
-  Button,
-  Container,
-  FormControl,
-  InputLabel,
-  LinearProgress,
-  MenuItem,
-  Paper,
-  Select,
-  Stack,
-  TextField,
-  Typography,
-} from "@mui/material";
-import CloudUploadOutlinedIcon from "@mui/icons-material/CloudUploadOutlined";
-import SearchIcon from "@mui/icons-material/Search";
 import Papa from "papaparse";
 
 import { REQUIRED_CSV_HEADERS } from "./constants";
-import {
-  uploadFile,
-  getJobStatus,
-  getTiers,
-} from "../api/apiService";
+import { getJobStatus, getTiers, uploadFile } from "../api/apiService";
+
+import UploadScreen from "./components/UploadScreen";
+import JobOverview from "./components/JobOverview";
+import FailedRecords from "./components/FailedRecords";
+import TierBreakdown from "./components/TierBreakdown";
+import ClassificationConfig from "./components/ClassificationConfig";
+import StoreResults from "./components/StoreResults";
 
 import "./App.css";
 
 function App() {
   const [file, setFile] = useState(null);
   const [error, setError] = useState("");
-  const [success, setSuccess] = useState(false);
 
   const [jobId, setJobId] = useState(null);
   const [progress, setProgress] = useState(null);
-
   const [isUploading, setIsUploading] = useState(false);
-  const [isLoadingStores, setIsLoadingStores] = useState(false);
 
   const [bars, setBars] = useState({
     footfall: "",
@@ -55,102 +39,58 @@ function App() {
   });
 
   const [stores, setStores] = useState([]);
-
   const [storeCounts, setStoreCounts] = useState({
     large: 0,
     medium: 0,
     small: 0,
   });
 
+  const [isLoadingStores, setIsLoadingStores] = useState(false);
   const [selectedTier, setSelectedTier] = useState("ALL");
 
-  const handleFileChange = (event) => {
-    const selectedFile = event.target.files?.[0];
+  const validateCsv = (selectedFile) => {
+    return new Promise((resolve, reject) => {
+      Papa.parse(selectedFile, {
+        preview: 1,
+        header: true,
+        skipEmptyLines: true,
 
-    if (!selectedFile) {
-      return;
-    }
+        complete: (results) => {
+          const headers = results.meta.fields || [];
 
-    setError("");
-    setSuccess(false);
-    setProgress(null);
-    setJobId(null);
-    setStores([]);
-    setSelectedTier("ALL");
-
-    setStoreCounts({
-      large: 0,
-      medium: 0,
-      small: 0,
-    });
-
-    setFile(selectedFile);
-
-    Papa.parse(selectedFile, {
-      preview: 1,
-      header: true,
-
-      complete: (results) => {
-        const uploadedColumns = (results.meta.fields || []).map(
-          (column) => column.trim().toLowerCase()
-        );
-
-        const missingColumns = REQUIRED_CSV_HEADERS.filter(
-          (column) =>
-            !uploadedColumns.includes(
-              column.trim().toLowerCase()
-            )
-        );
-
-        if (missingColumns.length > 0) {
-          setError(
-            `Missing required columns: ${missingColumns.join(
-              ", "
-            )}`
+          const normalizedHeaders = headers.map((header) =>
+            header.trim().toLowerCase()
           );
 
-          setSuccess(false);
-          return;
-        }
+          const requiredHeaders = REQUIRED_CSV_HEADERS.map((header) =>
+            header.trim().toLowerCase()
+          );
 
-        setError("");
-        setSuccess(true);
-      },
+          const hasValidHeaders =
+            normalizedHeaders.length === requiredHeaders.length &&
+            requiredHeaders.every((header) =>
+              normalizedHeaders.includes(header)
+            );
 
-      error: () => {
-        setError("Unable to read the CSV file.");
-        setSuccess(false);
-      },
+          if (!hasValidHeaders) {
+            reject(
+              new Error(
+                `Invalid CSV headers. Required headers: ${REQUIRED_CSV_HEADERS.join(
+                  ", "
+                )}`
+              )
+            );
+            return;
+          }
+
+          resolve();
+        },
+
+        error: (parseError) => {
+          reject(parseError);
+        },
+      });
     });
-  };
-
-  const handleSubmit = async () => {
-    if (!file || !success) {
-      return;
-    }
-
-    try {
-      setIsUploading(true);
-      setError("");
-      setProgress(null);
-
-      const data = await uploadFile(file);
-
-      const newJobId = data.job_id;
-
-      setJobId(newJobId);
-
-      pollJobStatus(newJobId);
-    } catch (error) {
-      console.error(error);
-
-      setError(
-        error.response?.data?.detail ||
-          "Unable to upload file"
-      );
-
-      setIsUploading(false);
-    }
   };
 
   const pollJobStatus = async (id) => {
@@ -162,12 +102,10 @@ function App() {
       const percentage = data.progress?.percentage ?? 0;
 
       const isCompleted =
-        data.status === "COMPLETED" ||
-        percentage >= 100;
+        data.status === "COMPLETED" || percentage >= 100;
 
       const isFailed =
-        data.status === "FAILED" ||
-        data.status === "ERROR";
+        data.status === "FAILED" || data.status === "ERROR";
 
       if (isCompleted) {
         setIsUploading(false);
@@ -188,19 +126,71 @@ function App() {
 
       setTimeout(() => {
         pollJobStatus(id);
-      }, 3000);
+      }, 1000);
     } catch (error) {
       console.error(error);
 
       setError(
         error.response?.data?.detail ||
-          "Unable to fetch job status"
+          "Unable to fetch job status.Please try again later"
       );
 
       setIsUploading(false);
     }
   };
 
+  const handleFileChange = async (selectedFile) => {
+    setError("");
+
+    if (!selectedFile) {
+      setFile(null);
+      return;
+    }
+
+    if (!selectedFile.name.toLowerCase().endsWith(".csv")) {
+      setFile(null);
+      setError("Please select a CSV file.");
+      return;
+    }
+
+    try {
+      await validateCsv(selectedFile);
+      setFile(selectedFile);
+    } catch (validationError) {
+      setFile(null);
+      setError(validationError.message);
+    }
+  };
+
+  const handleUpload = async () => {
+    if (!file) {
+      setError("Please select a CSV file first.");
+      return;
+    }
+
+    try {
+      setError("");
+      setIsUploading(true);
+      setProgress(null);
+
+      const response = await uploadFile(file);
+
+      const id = response.job_id;
+
+      setJobId(id);
+
+      await pollJobStatus(id);
+    } catch (error) {
+      console.error(error);
+
+      setError(
+        error.response?.data?.detail ||
+          "Unable to upload file. Please try again later"
+      );
+
+      setIsUploading(false);
+    }
+  };
 
   const handleBarChange = (field) => (event) => {
     setBars((previous) => ({
@@ -256,22 +246,14 @@ function App() {
     isWeightValid &&
     areThresholdsValid;
 
-  const handleRecalculate = async () => {
-    if (!jobId) {
-      setError("Job ID is missing.");
-      return;
-    }
-
+  const handleGetTiers = async () => {
     if (!areClassificationInputsValid) {
-      setError(
-        "Please provide all values, ensure weights total 100%, and ensure the Large threshold is greater than the Medium threshold."
-      );
       return;
     }
 
     try {
-      setIsLoadingStores(true);
       setError("");
+      setIsLoadingStores(true);
 
       const payload = {
         job_id: jobId,
@@ -315,16 +297,13 @@ function App() {
     }
   };
 
-  const handleNewUpload = () => {
+  const handleReset = () => {
     setFile(null);
     setError("");
-    setSuccess(false);
 
     setJobId(null);
     setProgress(null);
-
     setIsUploading(false);
-    setIsLoadingStores(false);
 
     setBars({
       footfall: "",
@@ -356,699 +335,55 @@ function App() {
 
   const processingComplete =
     progress?.status === "COMPLETED" ||
-    progress?.progress?.percentage >= 100;
-
-  const filteredStores =
-    selectedTier === "ALL"
-      ? stores
-      : stores.filter(
-          (store) =>
-            store.tier?.toUpperCase() === selectedTier
-        );
-
-  const totalRecords =
-    progress?.progress?.total_records || 0;
-
-  const successfulRecords =
-    progress?.progress?.successful_records || 0;
-
-  const failedRecordCount =
-    progress?.progress?.failed_records || 0;
-
-  const pendingRecords =
-    progress?.progress?.pending_records || 0;
-
-  const failedRecords = progress?.progress?.failed_records_details 
+    (progress?.progress?.percentage ?? 0) >= 100;
 
   if (!processingComplete) {
     return (
-      <main id="upload-page">
-        <Container maxWidth="sm">
-          <Paper
-            className="upload-card"
-            elevation={0}
-          >
-            <Stack spacing={3} alignItems="center" sx={{alignItems: "center"}}>
-              <div className="upload-icon">
-                <CloudUploadOutlinedIcon />
-              </div>
-
-              <div>
-                <Typography className="upload-title">
-                  Upload your file
-                </Typography>
-
-                <Typography className="upload-description">
-                  Select a CSV file from your device to
-                  get started.
-                </Typography>
-              </div>
-
-              <Button
-                component="label"
-                variant="outlined"
-                className="upload-button"
-                fullWidth
-                disabled={isUploading}
-                startIcon={
-                  <CloudUploadOutlinedIcon />
-                }
-              >
-                {file
-                  ? "Choose a different file"
-                  : "Choose file"}
-
-                <input
-                  type="file"
-                  hidden
-                  onChange={handleFileChange}
-                  accept=".csv"
-                />
-              </Button>
-
-              {file && (
-                <Box className="selected-file">
-                  <Typography className="selected-file-label">
-                    Selected file
-                  </Typography>
-
-                  <Typography className="selected-file-name">
-                    {file.name}
-                  </Typography>
-                </Box>
-              )}
-
-              {success && !isUploading && (
-                <Typography className="success-message">
-                  CSV file is valid and ready to upload.
-                </Typography>
-              )}
-
-              {isUploading && progress && (
-                <Box className="progress-section">
-                  <Box className="progress-header">
-                    <Typography className="progress-title">
-                      Processing file
-                    </Typography>
-
-                    <Typography className="progress-percentage">
-                      {(
-                        progress.progress?.percentage ||
-                        0
-                      ).toFixed(1)}
-                      %
-                    </Typography>
-                  </Box>
-
-                  <LinearProgress
-                    variant="determinate"
-                    value={
-                      progress.progress?.percentage || 0
-                    }
-                    className="progress-bar"
-                  />
-
-                  <Typography className="progress-status">
-                    Processing{" "}
-                    {(progress.progress
-                      ?.successful_records || 0) +
-                      (progress.progress
-                        ?.failed_records || 0)}{" "}
-                    of{" "}
-                    {progress.progress
-                      ?.total_records || 0}{" "}
-                    records
-                  </Typography>
-                </Box>
-              )}
-
-              {error && (
-                <Typography className="error-message">
-                  {error}
-                </Typography>
-              )}
-
-              <Button
-                variant="contained"
-                className="submit-button"
-                fullWidth
-                disabled={
-                  !file ||
-                  !success ||
-                  isUploading
-                }
-                onClick={handleSubmit}
-              >
-                {isUploading
-                  ? "Processing..."
-                  : "Submit"}
-              </Button>
-            </Stack>
-          </Paper>
-        </Container>
-      </main>
+      <UploadScreen
+        file={file}
+        error={error}
+        progress={progress}
+        isUploading={isUploading}
+        onFileChange={handleFileChange}
+        onUpload={handleUpload}
+      />
     );
   }
 
-
   return (
-    <main id="dashboard-page">
-      <Container maxWidth="xl">
-        <Box className="results-container">
-          <Box className="results-header">
-            <Box>
-              <Typography className="section-title">
-                TierForge
-              </Typography>
+    <main className="dashboard-page">
+      <JobOverview
+        jobId={jobId}
+        fileName={file?.name}
+        progress={progress}
+        onNewUpload={handleReset}
+      />
 
-              <Typography className="section-description">
-                Job #{jobId} • {file?.name}
-              </Typography>
-            </Box>
+      <FailedRecords progress={progress} />
 
-            <Button
-              variant="outlined"
-              className="new-upload-button"
-              onClick={handleNewUpload}
-            >
-              Upload New File
-            </Button>
-          </Box>
+      <TierBreakdown counts={storeCounts} />
 
-          <Box className="dashboard-section compact-section">
-            <Typography className="dashboard-section-title">
-              Job Status
-            </Typography>
+      <ClassificationConfig
+        bars={bars}
+        weights={weights}
+        tierThresholds={tierThresholds}
+        totalWeight={totalWeight}
+        isWeightValid={isWeightValid}
+        areThresholdsValid={areThresholdsValid}
+        isValid={areClassificationInputsValid}
+        isLoading={isLoadingStores}
+        error={error}
+        onBarChange={handleBarChange}
+        onWeightChange={handleWeightChange}
+        onThresholdChange={handleThresholdChange}
+        onRecalculate={handleGetTiers}
+      />
 
-            <Box className="status-grid">
-              <Paper
-                className="status-card"
-                elevation={0}
-              >
-                <Typography className="status-value">
-                  {totalRecords}
-                </Typography>
-
-                <Typography className="status-label">
-                  Total
-                </Typography>
-              </Paper>
-
-              <Paper
-                className="status-card successful"
-                elevation={0}
-              >
-                <Typography className="status-value">
-                  {successfulRecords}
-                </Typography>
-
-                <Typography className="status-label">
-                  Enriched
-                </Typography>
-              </Paper>
-
-              <Paper
-                className="status-card failed"
-                elevation={0}
-              >
-                <Typography className="status-value">
-                  {failedRecordCount}
-                </Typography>
-
-                <Typography className="status-label">
-                  Failed
-                </Typography>
-              </Paper>
-
-              <Paper
-                className="status-card pending"
-                elevation={0}
-              >
-                <Typography className="status-value">
-                  {pendingRecords}
-                </Typography>
-
-                <Typography className="status-label">
-                  Pending
-                </Typography>
-              </Paper>
-            </Box>
-          </Box>
-
-          {failedRecordCount > 0 && (
-            <Box className="dashboard-section compact-section">
-              <Box className="section-heading-row">
-                <Box>
-                  <Typography className="dashboard-section-title">
-                    Failed Records
-                  </Typography>
-
-                  <Typography className="dashboard-section-description">
-                    Records that could not be enriched.
-                  </Typography>
-                </Box>
-              </Box>
-
-              {failedRecords.length > 0 ? (
-                <Paper
-                  className="failure-card"
-                  elevation={0}
-                >
-                  <Box className="failure-table-wrapper">
-                    <table className="failure-table">
-                      <thead>
-                        <tr>
-                          <th>Store ID</th>
-                          <th>Store Name</th>
-                          <th>Reason</th>
-                        </tr>
-                      </thead>
-
-                      <tbody>
-                        {failedRecords.map(
-                          (record, index) => (
-                            <tr
-                              key={
-                                  record.store_id 
-                              }
-                            >
-                              <td>
-                                  {record.store_id}
-                              </td>
-
-                              <td>
-                                  {record.store_name}
-                              </td>
-
-                              <td className="failure-reason">
-                                {record.failure_reason }
-                              </td>
-                            </tr>
-                          )
-                        )}
-                      </tbody>
-                    </table>
-                  </Box>
-                </Paper>
-              ) : (
-                <Paper
-                  className="failure-card"
-                  elevation={0}
-                >
-                  <Typography className="no-failure-details">
-                    {failedRecordCount} record
-                    {failedRecordCount !== 1
-                      ? "s"
-                      : ""}{" "}
-                    failed, but failure details were
-                    not returned by the API.
-                  </Typography>
-                </Paper>
-              )}
-            </Box>
-          )}
-
-          <Box className="dashboard-section compact-section">
-            <Typography className="dashboard-section-title">
-              Tier Breakdown
-            </Typography>
-
-            <Box className="count-grid">
-              <Paper
-                className="count-card"
-                elevation={0}
-              >
-                <Typography className="count-value">
-                  {storeCounts.large}
-                </Typography>
-
-                <Typography className="count-label">
-                  Large
-                </Typography>
-              </Paper>
-
-              <Paper
-                className="count-card"
-                elevation={0}
-              >
-                <Typography className="count-value">
-                  {storeCounts.medium}
-                </Typography>
-
-                <Typography className="count-label">
-                  Medium
-                </Typography>
-              </Paper>
-
-              <Paper
-                className="count-card"
-                elevation={0}
-              >
-                <Typography className="count-value">
-                  {storeCounts.small}
-                </Typography>
-
-                <Typography className="count-label">
-                  Small
-                </Typography>
-              </Paper>
-            </Box>
-          </Box>
-
-          <Box className="dashboard-section compact-section">
-            <Box className="section-heading-row">
-              <Box>
-                <Typography className="dashboard-section-title">
-                  Classification Configuration
-                </Typography>
-
-                <Typography className="dashboard-section-description">
-                  Adjust the bars, weights and tier
-                  thresholds and recalculate the results.
-                </Typography>
-              </Box>
-            </Box>
-
-            {/* Metric inputs */}
-            <Box className="configuration-grid">
-
-              <Box className="config-column">
-                <Typography className="config-label">
-                  Footfall
-                </Typography>
-
-                <TextField
-                  size="small"
-                  type="number"
-                  label="Bar"
-                  value={bars.footfall}
-                  onChange={handleBarChange("footfall")}
-                  inputProps={{ min: 0 }}
-                  sx={{ marginRight: "16px" }}
-                />
-
-                <TextField
-                  size="small"
-                  type="number"
-                  label="Weight %"
-                  value={weights.footfall}
-                  onChange={handleWeightChange(
-                    "footfall"
-                  )}
-                  inputProps={{
-                    min: 0,
-                    max: 100,
-                  }}
-                />
-              </Box>
-
-              <Box className="config-column">
-                <Typography className="config-label">
-                  Revenue
-                </Typography>
-
-                <TextField
-                  size="small"
-                  type="number"
-                  label="Bar"
-                  value={bars.revenue}
-                  onChange={handleBarChange("revenue")}
-                  inputProps={{ min: 0 }}
-                  sx={{ marginRight: "16px" }}
-                />
-
-                <TextField
-                  size="small"
-                  type="number"
-                  label="Weight %"
-                  value={weights.revenue}
-                  onChange={handleWeightChange(
-                    "revenue"
-                  )}
-                  inputProps={{
-                    min: 0,
-                    max: 100,
-                  }}
-                />
-              </Box>
-
-              <Box className="config-column">
-                <Typography className="config-label">
-                  Size
-                </Typography>
-
-                <TextField
-                  size="small"
-                  type="number"
-                  label="Bar"
-                  value={bars.size}
-                  onChange={handleBarChange("size")}
-                  inputProps={{ min: 0 }}
-                  sx={{ marginRight: "16px" }}
-                />
-
-                <TextField
-                  size="small"
-                  type="number"
-                  label="Weight %"
-                  value={weights.size}
-                  onChange={handleWeightChange(
-                    "size"
-                  )}
-                  inputProps={{
-                    min: 0,
-                    max: 100,
-                  }}
-                />
-              </Box>
-
-              <Box className="config-column">
-                <Typography className="config-label">
-                  Tier Thresholds
-                </Typography>
-
-                <TextField
-                  size="small"
-                  type="number"
-                  label="Large %"
-                  value={tierThresholds.large}
-                  onChange={handleThresholdChange(
-                    "large"
-                  )}
-                  inputProps={{
-                    min: 0,
-                    max: 100,
-                  }}
-                  sx={{ marginRight: "16px" }}
-                />
-
-                <TextField
-                  size="small"
-                  type="number"
-                  label="Medium %"
-                  value={tierThresholds.medium}
-                  onChange={handleThresholdChange(
-                    "medium"
-                  )}
-                  inputProps={{
-                    min: 0,
-                    max: 100,
-                  }}
-                />
-              </Box>
-            </Box>
-
-            {/* Configuration footer */}
-            <Box className="configuration-footer">
-              <Box>
-                <Typography
-                  className={
-                    isWeightValid
-                      ? "weight-valid"
-                      : "weight-invalid"
-                  }
-                >
-                  Total Weight: {totalWeight}%
-                </Typography>
-
-                {!areThresholdsValid && (
-                  <Typography className="threshold-error">
-                    Large threshold must be greater than
-                    Medium threshold.
-                  </Typography>
-                )}
-              </Box>
-
-              <Button
-                variant="contained"
-                className="submit-button"
-                startIcon={<SearchIcon />}
-                disabled={
-                  !areClassificationInputsValid ||
-                  isLoadingStores
-                }
-                onClick={handleRecalculate}
-              >
-                {isLoadingStores
-                  ? "Calculating..."
-                  : "Recalculate Tiers"}
-              </Button>
-            </Box>
-
-            {error && (
-              <Typography className="error-message">
-                {error}
-              </Typography>
-            )}
-          </Box>
-
-          {/* STORE LIST */}
-          <Box className="dashboard-section compact-section">
-            <Box className="store-list-header">
-              <Box>
-                <Typography className="dashboard-section-title">
-                  Store List
-                </Typography>
-
-                <Typography className="dashboard-section-description">
-                  {filteredStores.length} store
-                  {filteredStores.length !== 1
-                    ? "s"
-                    : ""}{" "}
-                  displayed
-                </Typography>
-              </Box>
-
-              <FormControl
-                size="small"
-                className="tier-filter"
-              >
-                <InputLabel id="tier-filter-label">
-                  Tier
-                </InputLabel>
-
-                <Select
-                  labelId="tier-filter-label"
-                  value={selectedTier}
-                  label="Tier"
-                  onChange={(event) =>
-                    setSelectedTier(
-                      event.target.value
-                    )
-                  }
-                >
-                  <MenuItem value="ALL">
-                    All Stores
-                  </MenuItem>
-
-                  <MenuItem value="LARGE">
-                    Large
-                  </MenuItem>
-
-                  <MenuItem value="MEDIUM">
-                    Medium
-                  </MenuItem>
-
-                  <MenuItem value="SMALL">
-                    Small
-                  </MenuItem>
-                </Select>
-              </FormControl>
-            </Box>
-
-            <Paper
-              className="table-card"
-              elevation={0}
-            >
-              <Box className="store-table-wrapper">
-                <table className="store-table">
-                  <thead>
-                    <tr>
-                      <th>Store ID</th>
-                      <th>Store Name</th>
-                      <th>Footfall</th>
-                      <th>Revenue</th>
-                        <th>Size (sqft)</th>
-                      <th>Score</th>
-                      <th>Tier</th>
-                    </tr>
-                  </thead>
-
-                  <tbody>
-                    {filteredStores.length > 0 ? (
-                        filteredStores.map(
-                          (store) => (
-                        <tr
-                          key={store.store_id}
-                        >
-                          <td>
-                            {store.store_id}
-                          </td>
-
-                          <td>
-                                {store.store_name}
-                          </td>
-
-                          <td>
-                            {Number(
-                              store.metrics
-                                ?.footfall || 0
-                            ).toLocaleString()}
-                          </td>
-
-                          <td>
-                            {Number(
-                              store.metrics
-                                ?.revenue || 0
-                            ).toLocaleString(
-                              undefined,
-                              {
-                                minimumFractionDigits: 2,
-                                maximumFractionDigits: 2,
-                              }
-                            )}
-                          </td>
-
-                          <td>
-                            {Number(
-                              store.metrics
-                                ?.size_sqft || 0
-                            ).toLocaleString()}
-                          </td>
-
-                          <td>
-                            {store.score_percentage}%
-                          </td>
-
-                          <td>
-                            <span
-                              className={`category-badge ${(
-                                store.tier || ""
-                              ).toLowerCase()}`}
-                            >
-                              {store.tier}
-                            </span>
-                          </td>
-                        </tr>
-                      ))
-                    ) : (
-                      <tr>
-                        <td
-                          colSpan={7}
-                          className="empty-table"
-                        >
-                          No stores found for the
-                          selected tier.
-                        </td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
-              </Box>
-            </Paper>
-          </Box>
-        </Box>
-      </Container>
+      <StoreResults
+        stores={stores}
+        selectedTier={selectedTier}
+        onTierChange={setSelectedTier}
+      />
     </main>
   );
 }
