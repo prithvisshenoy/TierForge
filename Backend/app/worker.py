@@ -16,20 +16,19 @@ def _db_update_status(table: str, status: str, record_id: int):
         {"status": status, "now": datetime.utcnow(), "id": record_id}
     )
 
-def _db_update_enrichment_status(job_id: int, store_id: str, status: str):
+def _db_update_enrichment_status(store_id: str, status: str):
     execute_statement(
         """UPDATE enrichments
            SET status = :status, updated_at = :now
-           WHERE job_id = :job_id AND store_id = :store_id""",
+           WHERE store_id = :store_id""",
         {
             "status": status,
             "now": datetime.utcnow(),
-            "job_id": job_id,
             "store_id": store_id,
         },
     )
 
-def _db_save_enrichment_success(job_id: int, store_id: str, data: dict):
+def _db_save_enrichment_success(store_id: str, data: dict):
     execute_statement(
         """
         UPDATE enrichments 
@@ -39,28 +38,26 @@ def _db_save_enrichment_success(job_id: int, store_id: str, data: dict):
             status = 'COMPLETED',
             last_error = NULL,
             updated_at = :now
-        WHERE job_id = :job_id AND store_id = :store_id;
+        WHERE store_id = :store_id;
         """,
         {
             "footfall": data.get("estimated_monthly_footfall"),
             "revenue": data.get("estimated_monthly_revenue"),
             "size_sqft": data.get("store_size_sqft"),
             "now": datetime.utcnow(),
-            "job_id": job_id,
             "store_id": store_id,
         }
     )
 
-def _db_record_retry_error(job_id: int, store_id: str, attempt: int, err: str):
+def _db_record_retry_error(store_id: str, attempt: int, err: str):
     execute_statement(
         """UPDATE enrichments
            SET retry_count = :attempt, last_error = :err, updated_at = :now
-           WHERE job_id = :job_id AND store_id = :store_id""",
+           WHERE store_id = :store_id""",
         {
             "attempt": attempt,
             "err": err,
             "now": datetime.utcnow(),
-            "job_id": job_id,
             "store_id": store_id,
         },
     )
@@ -76,7 +73,7 @@ def _sync_job_progress_from_db(job_id: int):
                 COUNT(DISTINCT (s.store_id)) FILTER (WHERE e.status = 'COMPLETED') AS success_count,
                 COUNT(DISTINCT (s.store_id)) FILTER (WHERE e.status = 'FAILED') AS failed_count
             FROM stores s
-            JOIN enrichments e ON e.store_id = s.store_id AND e.job_id = s.job_id
+            JOIN enrichments e ON e.store_id = s.store_id
             WHERE s.job_id = :job_id
         ) counts
         WHERE j.id = :job_id;
@@ -97,7 +94,6 @@ async def enrich_single_store(
     }
     await asyncio.to_thread(
         _db_update_enrichment_status,
-        store["job_id"],
         store["store_id"],
         "PROCESSING",
     )
@@ -117,7 +113,6 @@ async def enrich_single_store(
                     data = response.json()
                     await asyncio.to_thread(
                         _db_save_enrichment_success,
-                        store["job_id"],
                         store["store_id"],
                         data,
                     )
@@ -126,7 +121,6 @@ async def enrich_single_store(
                 last_err = f"HTTP {response.status_code}: {response.text[:200]}"
                 await asyncio.to_thread(
                     _db_record_retry_error,
-                    store["job_id"],
                     store["store_id"],
                     attempt,
                     last_err,
@@ -140,7 +134,6 @@ async def enrich_single_store(
                 last_err = f"Request error: {str(exc)[:200]}"
                 await asyncio.to_thread(
                     _db_record_retry_error,
-                    store["job_id"],
                     store["store_id"],
                     attempt,
                     last_err,
@@ -152,7 +145,6 @@ async def enrich_single_store(
                     
         await asyncio.to_thread(
             _db_update_enrichment_status,
-            store["job_id"],
             store["store_id"],
             "FAILED",
         )
@@ -171,29 +163,11 @@ def _fetch_job_stores(job_id: int):
             s.state,
             e.id AS enrichment_id
         FROM stores s
-        JOIN enrichments e ON e.store_id = s.store_id AND e.job_id = s.job_id
+        JOIN enrichments e ON e.store_id = s.store_id
         WHERE s.job_id = :job_id;
         """,
         {"job_id": job_id}
     )
-
-def _update_job_counters(job_id: int, success_count: int, failed_count: int):
-    execute_statement(
-        """
-        UPDATE jobs 
-        SET successful_records = successful_records + :success,
-            failed_records = failed_records + :failed,
-            updated_at = :now
-        WHERE id = :job_id;
-        """,
-        {
-            "success": success_count,
-            "failed": failed_count,
-            "now": datetime.utcnow(),
-            "job_id": job_id
-        }
-    )
-
 
 async def run_batch_enrichment_job(job_id: int):
     try:
