@@ -2,7 +2,7 @@ import csv
 import io
 from datetime import datetime, timezone
 
-from fastapi import HTTPException
+from fastapi import BackgroundTasks, HTTPException
 from loguru import logger
 
 from models.models import TierCalculationRequest
@@ -150,8 +150,39 @@ def fetch_job_status(job_id: int) -> dict | None:
         },
     }
 
+def insert_score_tier_calculation_results(job_id: int, results: list[dict]):
+    if not results:
+        logger.warning(f"No results to insert for job_id {job_id}")
+        return
 
-def calculate_scores_and_tiers(config: TierCalculationRequest) -> dict:
+    insert_query = """
+        INSERT INTO store_tier_results (job_id, store_id, score, tier, footfall_snapshot, revenue_snapshot, size_sqft_snapshot, calculated_at)
+        VALUES (:job_id, :store_id, :score, :tier, :footfall_snapshot, :revenue_snapshot, :size_sqft_snapshot, NOW())
+        ON CONFLICT (job_id, store_id) DO UPDATE SET
+            score = EXCLUDED.score,
+            tier = EXCLUDED.tier,
+            footfall_snapshot = EXCLUDED.footfall_snapshot,
+            revenue_snapshot = EXCLUDED.revenue_snapshot,
+            size_sqft_snapshot = EXCLUDED.size_sqft_snapshot,
+            calculated_at = CURRENT_TIMESTAMP;
+    """
+
+    insert_params = [
+        {
+            "job_id": job_id,
+            "store_id": r["store_id"],
+            "score": float(r["score"]) if r.get("score") is not None else 0.0,
+            "tier": r.get("tier", "Small"),
+            "footfall_snapshot": r.get("est_monthly_footfall"),
+            "revenue_snapshot": float(r["est_monthly_revenue"]) if r.get("est_monthly_revenue") is not None else 0.0,
+            "size_sqft_snapshot": r.get("store_size_sqft")
+        }
+        for r in results
+    ]
+
+    execute_statement(insert_query, insert_params)
+
+def calculate_scores_and_tiers(config: TierCalculationRequest, background_tasks: BackgroundTasks) -> dict:
     query = """
         WITH calculated_score AS (
             SELECT DISTINCT
@@ -201,6 +232,8 @@ def calculate_scores_and_tiers(config: TierCalculationRequest) -> dict:
     }
 
     stores = execute_query(query, params)
+
+    background_tasks.add_task(insert_score_tier_calculation_results, config.job_id, stores)
 
     if not stores:
         return {

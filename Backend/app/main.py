@@ -38,9 +38,9 @@ async def get_job_status(job_id: str):
     return job_data
 
 @app.post("/tiers")
-async def create_tier(payload: TierCalculationRequest):
+async def create_tier(payload: TierCalculationRequest, background_tasks: BackgroundTasks):
     try:
-        result = await asyncio.to_thread(calculate_scores_and_tiers, payload)
+        result = await asyncio.to_thread(calculate_scores_and_tiers, payload, background_tasks=background_tasks)
 
         return result
 

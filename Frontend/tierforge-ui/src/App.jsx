@@ -161,7 +161,7 @@ function App() {
 
       setTimeout(() => {
         pollJobStatus(id);
-      }, 1000);
+      }, 7000);
     } catch (error) {
       console.error(error);
 
