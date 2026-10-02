@@ -372,11 +372,7 @@ function App() {
             store.tier?.toUpperCase() === selectedTier
         );
 
-  const failedRecords =
-    progress?.failed_records_details ||
-    progress?.failed_stores ||
-    progress?.failed_records_data ||
-    [];
+  const failedRecords = progress?.progress?.failed_records_details 
 
 
   if (!processingComplete) {
@@ -640,29 +636,19 @@ function App() {
                             (record, index) => (
                               <tr
                                 key={
-                                  record.store_id ||
-                                  record.id ||
-                                  index
+                                  record.store_id 
                                 }
                               >
                                 <td>
-                                  {record.store_id ||
-                                    record.id ||
-                                    "-"}
+                                  {record.store_id}
                                 </td>
 
                                 <td>
-                                  {record.store_name ||
-                                    record.name ||
-                                    "-"}
+                                  {record.store_name}
                                 </td>
 
                                 <td className="failure-reason">
-                                  {record.reason ||
-                                    record.failure_reason ||
-                                    record.error ||
-                                    record.message ||
-                                    "Unknown failure"}
+                                  {record.failure_reason }
                                 </td>
                               </tr>
                             )

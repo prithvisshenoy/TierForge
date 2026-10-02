@@ -117,6 +117,14 @@ def fetch_job_status(job_id: int):
 
     processed_records = job["successful_records"] + job["failed_records"]
     pending_records = job["total_records"] - processed_records
+
+    failed_records_query = """
+         SELECT DISTINCT(s.store_id), store_name, e.last_error
+            FROM stores s
+            JOIN enrichments e ON e.store_id = s.store_id
+            WHERE e.job_id = :job_id AND  e.status = 'FAILED'
+        """
+    failed_records = execute_query(failed_records_query, {"job_id": job_id})
     
     progress_percentage = 0.0
     if job["total_records"] > 0:
@@ -129,6 +137,7 @@ def fetch_job_status(job_id: int):
             "total_records": job["total_records"],
             "successful_records": job["successful_records"],
             "failed_records": job["failed_records"],
+            "failed_records_details": failed_records,
             "pending_records": pending_records,
             "percentage": progress_percentage
         },
