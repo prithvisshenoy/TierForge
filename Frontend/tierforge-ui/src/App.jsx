@@ -49,6 +49,11 @@ function App() {
     size: "",
   });
 
+  const [tierThresholds, setTierThresholds] = useState({
+    large: "",
+    medium: "",
+  });
+
   const [stores, setStores] = useState([]);
 
   const [storeCounts, setStoreCounts] = useState({
@@ -56,13 +61,6 @@ function App() {
     medium: 0,
     small: 0,
   });
-
-  const [tierThresholds, setTierThresholds] = useState({
-    large: "",
-    medium: "",
-  });
-
-  const [showDashboard, setShowDashboard] = useState(false);
 
   const [selectedTier, setSelectedTier] = useState("ALL");
 
@@ -77,7 +75,6 @@ function App() {
     setSuccess(false);
     setProgress(null);
     setJobId(null);
-    setShowDashboard(false);
     setStores([]);
     setSelectedTier("ALL");
 
@@ -111,6 +108,7 @@ function App() {
               ", "
             )}`
           );
+
           setSuccess(false);
           return;
         }
@@ -124,6 +122,35 @@ function App() {
         setSuccess(false);
       },
     });
+  };
+
+  const handleSubmit = async () => {
+    if (!file || !success) {
+      return;
+    }
+
+    try {
+      setIsUploading(true);
+      setError("");
+      setProgress(null);
+
+      const data = await uploadFile(file);
+
+      const newJobId = data.job_id;
+
+      setJobId(newJobId);
+
+      pollJobStatus(newJobId);
+    } catch (error) {
+      console.error(error);
+
+      setError(
+        error.response?.data?.detail ||
+          "Unable to upload file"
+      );
+
+      setIsUploading(false);
+    }
   };
 
   const pollJobStatus = async (id) => {
@@ -161,42 +188,13 @@ function App() {
 
       setTimeout(() => {
         pollJobStatus(id);
-      }, 7000);
+      }, 3000);
     } catch (error) {
       console.error(error);
 
       setError(
         error.response?.data?.detail ||
           "Unable to fetch job status"
-      );
-
-      setIsUploading(false);
-    }
-  };
-
-  const handleSubmit = async () => {
-    if (!file || !success) {
-      return;
-    }
-
-    try {
-      setIsUploading(true);
-      setError("");
-      setProgress(null);
-
-      const data = await uploadFile(file);
-
-      const newJobId = data.job_id;
-
-      setJobId(newJobId);
-
-      pollJobStatus(newJobId);
-    } catch (error) {
-      console.error(error);
-
-      setError(
-        error.response?.data?.detail ||
-          "Unable to upload file"
       );
 
       setIsUploading(false);
@@ -258,8 +256,7 @@ function App() {
     isWeightValid &&
     areThresholdsValid;
 
-
-  const handleShowStores = async () => {
+  const handleRecalculate = async () => {
     if (!jobId) {
       setError("Job ID is missing.");
       return;
@@ -291,6 +288,7 @@ function App() {
         large_tier_threshold: Number(
           tierThresholds.large
         ),
+
         medium_tier_threshold: Number(
           tierThresholds.medium
         ),
@@ -305,8 +303,6 @@ function App() {
         medium: data.tier_breakdown?.medium || 0,
         small: data.tier_breakdown?.small || 0,
       });
-
-      setShowDashboard(true);
     } catch (error) {
       console.error(error);
 
@@ -356,13 +352,11 @@ function App() {
     });
 
     setSelectedTier("ALL");
-    setShowDashboard(false);
   };
 
   const processingComplete =
     progress?.status === "COMPLETED" ||
     progress?.progress?.percentage >= 100;
-
 
   const filteredStores =
     selectedTier === "ALL"
@@ -372,8 +366,19 @@ function App() {
             store.tier?.toUpperCase() === selectedTier
         );
 
-  const failedRecords = progress?.progress?.failed_records_details 
+  const totalRecords =
+    progress?.progress?.total_records || 0;
 
+  const successfulRecords =
+    progress?.progress?.successful_records || 0;
+
+  const failedRecordCount =
+    progress?.progress?.failed_records || 0;
+
+  const pendingRecords =
+    progress?.progress?.pending_records || 0;
+
+  const failedRecords = progress?.progress?.failed_records_details 
 
   if (!processingComplete) {
     return (
@@ -458,8 +463,7 @@ function App() {
                   <LinearProgress
                     variant="determinate"
                     value={
-                      progress.progress?.percentage ||
-                      0
+                      progress.progress?.percentage || 0
                     }
                     className="progress-bar"
                   />
@@ -505,509 +509,328 @@ function App() {
       </main>
     );
   }
-  if (showDashboard) {
-    const totalRecords =
-      progress?.progress?.total_records || 0;
 
-    const successfulRecords =
-      progress?.progress?.successful_records || 0;
-
-    const failedRecordCount =
-      progress?.progress?.failed_records || 0;
-
-    const pendingRecords =
-      progress?.progress?.pending_records || 0;
-
-    return (
-      <main id="dashboard-page">
-        <Container maxWidth="xl">
-          <Box className="results-container">
-            <Box className="results-header">
-              <Box>
-                <Typography className="section-title">
-                  TierForge
-                </Typography>
-
-                <Typography className="section-description">
-                  Job #{jobId} • {file?.name}
-                </Typography>
-              </Box>
-
-              <Button
-                variant="outlined"
-                className="new-upload-button"
-                onClick={handleNewUpload}
-              >
-                Upload New File
-              </Button>
-            </Box>
-
-            <Box className="dashboard-section">
-              <Typography className="dashboard-section-title">
-                Job Status
-              </Typography>
-
-              <Box className="status-grid">
-                <Paper
-                  className="status-card"
-                  elevation={0}
-                >
-                  <Typography className="status-value">
-                    {totalRecords}
-                  </Typography>
-
-                  <Typography className="status-label">
-                    Total Records
-                  </Typography>
-                </Paper>
-
-                <Paper
-                  className="status-card successful"
-                  elevation={0}
-                >
-                  <Typography className="status-value">
-                    {successfulRecords}
-                  </Typography>
-
-                  <Typography className="status-label">
-                    Stores Enriched
-                  </Typography>
-                </Paper>
-
-                <Paper
-                  className="status-card failed"
-                  elevation={0}
-                >
-                  <Typography className="status-value">
-                    {failedRecordCount}
-                  </Typography>
-
-                  <Typography className="status-label">
-                    Failed
-                  </Typography>
-                </Paper>
-
-                <Paper
-                  className="status-card pending"
-                  elevation={0}
-                >
-                  <Typography className="status-value">
-                    {pendingRecords}
-                  </Typography>
-
-                  <Typography className="status-label">
-                    Pending
-                  </Typography>
-                </Paper>
-              </Box>
-            </Box>
-
-            {failedRecordCount > 0 && (
-              <Box className="dashboard-section">
-                <Box className="section-heading-row">
-                  <Box>
-                    <Typography className="dashboard-section-title">
-                      Failed Records
-                    </Typography>
-
-                    <Typography className="dashboard-section-description">
-                      Records that could not be enriched.
-                    </Typography>
-                  </Box>
-                </Box>
-
-                {failedRecords.length > 0 ? (
-                  <Paper
-                    className="failure-card"
-                    elevation={0}
-                  >
-                    <Box className="failure-table-wrapper">
-                      <table className="failure-table">
-                        <thead>
-                          <tr>
-                            <th>Store ID</th>
-                            <th>Store Name</th>
-                            <th>Reason</th>
-                          </tr>
-                        </thead>
-
-                        <tbody>
-                          {failedRecords.map(
-                            (record, index) => (
-                              <tr
-                                key={
-                                  record.store_id 
-                                }
-                              >
-                                <td>
-                                  {record.store_id}
-                                </td>
-
-                                <td>
-                                  {record.store_name}
-                                </td>
-
-                                <td className="failure-reason">
-                                  {record.failure_reason }
-                                </td>
-                              </tr>
-                            )
-                          )}
-                        </tbody>
-                      </table>
-                    </Box>
-                  </Paper>
-                ) : (
-                  <Paper
-                    className="failure-card"
-                    elevation={0}
-                  >
-                    <Typography className="no-failure-details">
-                      {failedRecordCount} record
-                      {failedRecordCount !== 1
-                        ? "s"
-                        : ""}{" "}
-                      failed, but failure details were
-                      not returned by the API.
-                    </Typography>
-                  </Paper>
-                )}
-              </Box>
-            )}
-
-            <Box className="dashboard-section">
-              <Typography className="dashboard-section-title">
-                Tier Breakdown
-              </Typography>
-
-              <Box className="count-grid">
-                <Paper
-                  className="count-card"
-                  elevation={0}
-                >
-                  <Typography className="count-value">
-                    {storeCounts.large}
-                  </Typography>
-
-                  <Typography className="count-label">
-                    Large Stores
-                  </Typography>
-                </Paper>
-
-                <Paper
-                  className="count-card"
-                  elevation={0}
-                >
-                  <Typography className="count-value">
-                    {storeCounts.medium}
-                  </Typography>
-
-                  <Typography className="count-label">
-                    Medium Stores
-                  </Typography>
-                </Paper>
-
-                <Paper
-                  className="count-card"
-                  elevation={0}
-                >
-                  <Typography className="count-value">
-                    {storeCounts.small}
-                  </Typography>
-
-                  <Typography className="count-label">
-                    Small Stores
-                  </Typography>
-                </Paper>
-              </Box>
-            </Box>
-
-            <Box className="dashboard-section">
-              <Box className="store-list-header">
-                <Box>
-                  <Typography className="dashboard-section-title">
-                    Store List
-                  </Typography>
-
-                  <Typography className="dashboard-section-description">
-                    {filteredStores.length} store
-                    {filteredStores.length !== 1
-                      ? "s"
-                      : ""}{" "}
-                    displayed
-                  </Typography>
-                </Box>
-
-                <FormControl
-                  size="small"
-                  className="tier-filter"
-                >
-                  <InputLabel id="tier-filter-label">
-                    Filter by tier
-                  </InputLabel>
-
-                  <Select
-                    labelId="tier-filter-label"
-                    value={selectedTier}
-                    label="Filter by tier"
-                    onChange={(event) =>
-                      setSelectedTier(
-                        event.target.value
-                      )
-                    }
-                  >
-                    <MenuItem value="ALL">
-                      All Stores
-                    </MenuItem>
-
-                    <MenuItem value="LARGE">
-                      Large
-                    </MenuItem>
-
-                    <MenuItem value="MEDIUM">
-                      Medium
-                    </MenuItem>
-
-                    <MenuItem value="SMALL">
-                      Small
-                    </MenuItem>
-                  </Select>
-                </FormControl>
-              </Box>
-
-              <Paper
-                className="table-card"
-                elevation={0}
-              >
-                <Box className="store-table-wrapper">
-                  <table className="store-table">
-                    <thead>
-                      <tr>
-                        <th>Store ID</th>
-                        <th>Store Name</th>
-                        <th>Footfall</th>
-                        <th>Revenue</th>
-                        <th>Size (sqft)</th>
-                        <th>Score</th>
-                        <th>Tier</th>
-                      </tr>
-                    </thead>
-
-                    <tbody>
-                      {filteredStores.length > 0 ? (
-                        filteredStores.map(
-                          (store) => (
-                            <tr
-                              key={store.store_id}
-                            >
-                              <td>
-                                {store.store_id}
-                              </td>
-
-                              <td>
-                                {store.store_name}
-                              </td>
-
-                              <td>
-                                {Number(
-                                  store.metrics
-                                    ?.footfall || 0
-                                ).toLocaleString()}
-                              </td>
-
-                              <td>
-                                {Number(
-                                  store.metrics
-                                    ?.revenue || 0
-                                ).toLocaleString(
-                                  undefined,
-                                  {
-                                    minimumFractionDigits: 2,
-                                    maximumFractionDigits: 2,
-                                  }
-                                )}
-                              </td>
-
-                              <td>
-                                {Number(
-                                  store.metrics
-                                    ?.size_sqft || 0
-                                ).toLocaleString()}
-                              </td>
-
-                              <td>
-                                {
-                                  store.score_percentage
-                                }
-                                %
-                              </td>
-
-                              <td>
-                                <span
-                                  className={`category-badge ${(
-                                    store.tier || ""
-                                  ).toLowerCase()}`}
-                                >
-                                  {store.tier}
-                                </span>
-                              </td>
-                            </tr>
-                          )
-                        )
-                      ) : (
-                        <tr>
-                          <td
-                            colSpan={7}
-                            className="empty-table"
-                          >
-                            No stores found for the
-                            selected tier.
-                          </td>
-                        </tr>
-                      )}
-                    </tbody>
-                  </table>
-                </Box>
-              </Paper>
-            </Box>
-
-          </Box>
-        </Container>
-      </main>
-    );
-  }
 
   return (
-    <main id="classification-page">
-      <Container maxWidth="md">
-        <Paper
-          className="classification-card"
-          elevation={0}
-        >
-          <Stack spacing={3}>
+    <main id="dashboard-page">
+      <Container maxWidth="xl">
+        <Box className="results-container">
+          <Box className="results-header">
             <Box>
               <Typography className="section-title">
-                Configure Store Classification
+                TierForge
               </Typography>
 
               <Typography className="section-description">
-                Enter the threshold and weight for each
-                metric used to calculate the store score.
+                Job #{jobId} • {file?.name}
               </Typography>
             </Box>
 
-            <Box className="input-header">
-              <span>Metric</span>
-              <span>Threshold / Bar</span>
-              <span>Weight (%)</span>
+            <Button
+              variant="outlined"
+              className="new-upload-button"
+              onClick={handleNewUpload}
+            >
+              Upload New File
+            </Button>
+          </Box>
+
+          <Box className="dashboard-section compact-section">
+            <Typography className="dashboard-section-title">
+              Job Status
+            </Typography>
+
+            <Box className="status-grid">
+              <Paper
+                className="status-card"
+                elevation={0}
+              >
+                <Typography className="status-value">
+                  {totalRecords}
+                </Typography>
+
+                <Typography className="status-label">
+                  Total
+                </Typography>
+              </Paper>
+
+              <Paper
+                className="status-card successful"
+                elevation={0}
+              >
+                <Typography className="status-value">
+                  {successfulRecords}
+                </Typography>
+
+                <Typography className="status-label">
+                  Enriched
+                </Typography>
+              </Paper>
+
+              <Paper
+                className="status-card failed"
+                elevation={0}
+              >
+                <Typography className="status-value">
+                  {failedRecordCount}
+                </Typography>
+
+                <Typography className="status-label">
+                  Failed
+                </Typography>
+              </Paper>
+
+              <Paper
+                className="status-card pending"
+                elevation={0}
+              >
+                <Typography className="status-value">
+                  {pendingRecords}
+                </Typography>
+
+                <Typography className="status-label">
+                  Pending
+                </Typography>
+              </Paper>
+            </Box>
+          </Box>
+
+          {failedRecordCount > 0 && (
+            <Box className="dashboard-section compact-section">
+              <Box className="section-heading-row">
+                <Box>
+                  <Typography className="dashboard-section-title">
+                    Failed Records
+                  </Typography>
+
+                  <Typography className="dashboard-section-description">
+                    Records that could not be enriched.
+                  </Typography>
+                </Box>
+              </Box>
+
+              {failedRecords.length > 0 ? (
+                <Paper
+                  className="failure-card"
+                  elevation={0}
+                >
+                  <Box className="failure-table-wrapper">
+                    <table className="failure-table">
+                      <thead>
+                        <tr>
+                          <th>Store ID</th>
+                          <th>Store Name</th>
+                          <th>Reason</th>
+                        </tr>
+                      </thead>
+
+                      <tbody>
+                        {failedRecords.map(
+                          (record, index) => (
+                            <tr
+                              key={
+                                  record.store_id 
+                              }
+                            >
+                              <td>
+                                  {record.store_id}
+                              </td>
+
+                              <td>
+                                  {record.store_name}
+                              </td>
+
+                              <td className="failure-reason">
+                                {record.failure_reason }
+                              </td>
+                            </tr>
+                          )
+                        )}
+                      </tbody>
+                    </table>
+                  </Box>
+                </Paper>
+              ) : (
+                <Paper
+                  className="failure-card"
+                  elevation={0}
+                >
+                  <Typography className="no-failure-details">
+                    {failedRecordCount} record
+                    {failedRecordCount !== 1
+                      ? "s"
+                      : ""}{" "}
+                    failed, but failure details were
+                    not returned by the API.
+                  </Typography>
+                </Paper>
+              )}
+            </Box>
+          )}
+
+          <Box className="dashboard-section compact-section">
+            <Typography className="dashboard-section-title">
+              Tier Breakdown
+            </Typography>
+
+            <Box className="count-grid">
+              <Paper
+                className="count-card"
+                elevation={0}
+              >
+                <Typography className="count-value">
+                  {storeCounts.large}
+                </Typography>
+
+                <Typography className="count-label">
+                  Large
+                </Typography>
+              </Paper>
+
+              <Paper
+                className="count-card"
+                elevation={0}
+              >
+                <Typography className="count-value">
+                  {storeCounts.medium}
+                </Typography>
+
+                <Typography className="count-label">
+                  Medium
+                </Typography>
+              </Paper>
+
+              <Paper
+                className="count-card"
+                elevation={0}
+              >
+                <Typography className="count-value">
+                  {storeCounts.small}
+                </Typography>
+
+                <Typography className="count-label">
+                  Small
+                </Typography>
+              </Paper>
+            </Box>
+          </Box>
+
+          <Box className="dashboard-section compact-section">
+            <Box className="section-heading-row">
+              <Box>
+                <Typography className="dashboard-section-title">
+                  Classification Configuration
+                </Typography>
+
+                <Typography className="dashboard-section-description">
+                  Adjust the bars, weights and tier
+                  thresholds and recalculate the results.
+                </Typography>
+              </Box>
             </Box>
 
-            <Box className="metric-row">
-              <Typography className="metric-name">
-                Footfall
-              </Typography>
+            {/* Metric inputs */}
+            <Box className="configuration-grid">
 
-              <TextField
-                fullWidth
-                type="number"
-                size="small"
-                label="Footfall bar"
-                value={bars.footfall}
-                onChange={handleBarChange("footfall")}
-                inputProps={{ min: 0 }}
-              />
+              <Box className="config-column">
+                <Typography className="config-label">
+                  Footfall
+                </Typography>
 
-              <TextField
-                fullWidth
-                type="number"
-                size="small"
-                label="Weight"
-                value={weights.footfall}
-                onChange={handleWeightChange(
-                  "footfall"
-                )}
-                inputProps={{
-                  min: 0,
-                  max: 100,
-                }}
-              />
-            </Box>
-
-            <Box className="metric-row">
-              <Typography className="metric-name">
-                Revenue
-              </Typography>
-
-              <TextField
-                fullWidth
-                type="number"
-                size="small"
-                label="Revenue bar"
-                value={bars.revenue}
-                onChange={handleBarChange("revenue")}
-                inputProps={{ min: 0 }}
-              />
-
-              <TextField
-                fullWidth
-                type="number"
-                size="small"
-                label="Weight"
-                value={weights.revenue}
-                onChange={handleWeightChange(
-                  "revenue"
-                )}
-                inputProps={{
-                  min: 0,
-                  max: 100,
-                }}
-              />
-            </Box>
-
-            <Box className="metric-row">
-              <Typography className="metric-name">
-                Size (in sqft)
-              </Typography>
-
-              <TextField
-                fullWidth
-                type="number"
-                size="small"
-                label="Size bar"
-                value={bars.size}
-                onChange={handleBarChange("size")}
-                inputProps={{ min: 0 }}
-              />
-
-              <TextField
-                fullWidth
-                type="number"
-                size="small"
-                label="Weight"
-                value={weights.size}
-                onChange={handleWeightChange("size")}
-                inputProps={{
-                  min: 0,
-                  max: 100,
-                }}
-              />
-            </Box>
-
-            <Box className="threshold-section">
-              <Typography className="threshold-section-title">
-                Tier Thresholds
-              </Typography>
-
-              <Typography className="threshold-section-description">
-                Define the score thresholds used to classify stores.
-              </Typography>
-
-              <Box className="threshold-grid">
                 <TextField
-                  fullWidth
-                  type="number"
                   size="small"
-                  label="Large Tier Threshold (%)"
+                  type="number"
+                  label="Bar"
+                  value={bars.footfall}
+                  onChange={handleBarChange("footfall")}
+                  inputProps={{ min: 0 }}
+                  sx={{ marginRight: "16px" }}
+                />
+
+                <TextField
+                  size="small"
+                  type="number"
+                  label="Weight %"
+                  value={weights.footfall}
+                  onChange={handleWeightChange(
+                    "footfall"
+                  )}
+                  inputProps={{
+                    min: 0,
+                    max: 100,
+                  }}
+                />
+              </Box>
+
+              <Box className="config-column">
+                <Typography className="config-label">
+                  Revenue
+                </Typography>
+
+                <TextField
+                  size="small"
+                  type="number"
+                  label="Bar"
+                  value={bars.revenue}
+                  onChange={handleBarChange("revenue")}
+                  inputProps={{ min: 0 }}
+                  sx={{ marginRight: "16px" }}
+                />
+
+                <TextField
+                  size="small"
+                  type="number"
+                  label="Weight %"
+                  value={weights.revenue}
+                  onChange={handleWeightChange(
+                    "revenue"
+                  )}
+                  inputProps={{
+                    min: 0,
+                    max: 100,
+                  }}
+                />
+              </Box>
+
+              <Box className="config-column">
+                <Typography className="config-label">
+                  Size
+                </Typography>
+
+                <TextField
+                  size="small"
+                  type="number"
+                  label="Bar"
+                  value={bars.size}
+                  onChange={handleBarChange("size")}
+                  inputProps={{ min: 0 }}
+                  sx={{ marginRight: "16px" }}
+                />
+
+                <TextField
+                  size="small"
+                  type="number"
+                  label="Weight %"
+                  value={weights.size}
+                  onChange={handleWeightChange(
+                    "size"
+                  )}
+                  inputProps={{
+                    min: 0,
+                    max: 100,
+                  }}
+                />
+              </Box>
+
+              <Box className="config-column">
+                <Typography className="config-label">
+                  Tier Thresholds
+                </Typography>
+
+                <TextField
+                  size="small"
+                  type="number"
+                  label="Large %"
                   value={tierThresholds.large}
                   onChange={handleThresholdChange(
                     "large"
@@ -1016,14 +839,13 @@ function App() {
                     min: 0,
                     max: 100,
                   }}
-                  helperText="Score required for Large"
+                  sx={{ marginRight: "16px" }}
                 />
 
                 <TextField
-                  fullWidth
-                  type="number"
                   size="small"
-                  label="Medium Tier Threshold (%)"
+                  type="number"
+                  label="Medium %"
                   value={tierThresholds.medium}
                   onChange={handleThresholdChange(
                     "medium"
@@ -1032,36 +854,45 @@ function App() {
                     min: 0,
                     max: 100,
                   }}
-                  helperText="Score required for Medium"
                 />
               </Box>
-
-              {tierThresholds.large !== "" &&
-                tierThresholds.medium !== "" &&
-                Number(tierThresholds.large) <=
-                  Number(tierThresholds.medium) && (
-                  <Typography className="threshold-error">
-                    Large tier threshold must be
-                    greater than medium tier
-                    threshold.
-                  </Typography>
-                )}
             </Box>
 
-            <Box
-              className={
-                isWeightValid
-                  ? "weight-summary valid"
-                  : "weight-summary invalid"
-              }
-            >
-              <Typography>
-                Total weight
-              </Typography>
+            {/* Configuration footer */}
+            <Box className="configuration-footer">
+              <Box>
+                <Typography
+                  className={
+                    isWeightValid
+                      ? "weight-valid"
+                      : "weight-invalid"
+                  }
+                >
+                  Total Weight: {totalWeight}%
+                </Typography>
 
-              <Typography>
-                {totalWeight}%
-              </Typography>
+                {!areThresholdsValid && (
+                  <Typography className="threshold-error">
+                    Large threshold must be greater than
+                    Medium threshold.
+                  </Typography>
+                )}
+              </Box>
+
+              <Button
+                variant="contained"
+                className="submit-button"
+                startIcon={<SearchIcon />}
+                disabled={
+                  !areClassificationInputsValid ||
+                  isLoadingStores
+                }
+                onClick={handleRecalculate}
+              >
+                {isLoadingStores
+                  ? "Calculating..."
+                  : "Recalculate Tiers"}
+              </Button>
             </Box>
 
             {error && (
@@ -1069,33 +900,154 @@ function App() {
                 {error}
               </Typography>
             )}
+          </Box>
 
-            <Button
-              variant="contained"
-              className="submit-button"
-              fullWidth
-              startIcon={<SearchIcon />}
-              disabled={
-                !areClassificationInputsValid ||
-                isLoadingStores
-              }
-              onClick={handleShowStores}
-            >
-              {isLoadingStores
-                ? "Calculating..."
-                : "Show Stores"}
-            </Button>
+          {/* STORE LIST */}
+          <Box className="dashboard-section compact-section">
+            <Box className="store-list-header">
+              <Box>
+                <Typography className="dashboard-section-title">
+                  Store List
+                </Typography>
 
-            <Button
-              variant="text"
-              className="new-upload-button"
-              onClick={handleNewUpload}
-              disabled={isLoadingStores}
+                <Typography className="dashboard-section-description">
+                  {filteredStores.length} store
+                  {filteredStores.length !== 1
+                    ? "s"
+                    : ""}{" "}
+                  displayed
+                </Typography>
+              </Box>
+
+              <FormControl
+                size="small"
+                className="tier-filter"
+              >
+                <InputLabel id="tier-filter-label">
+                  Tier
+                </InputLabel>
+
+                <Select
+                  labelId="tier-filter-label"
+                  value={selectedTier}
+                  label="Tier"
+                  onChange={(event) =>
+                    setSelectedTier(
+                      event.target.value
+                    )
+                  }
+                >
+                  <MenuItem value="ALL">
+                    All Stores
+                  </MenuItem>
+
+                  <MenuItem value="LARGE">
+                    Large
+                  </MenuItem>
+
+                  <MenuItem value="MEDIUM">
+                    Medium
+                  </MenuItem>
+
+                  <MenuItem value="SMALL">
+                    Small
+                  </MenuItem>
+                </Select>
+              </FormControl>
+            </Box>
+
+            <Paper
+              className="table-card"
+              elevation={0}
             >
-              Upload New File
-            </Button>
-          </Stack>
-        </Paper>
+              <Box className="store-table-wrapper">
+                <table className="store-table">
+                  <thead>
+                    <tr>
+                      <th>Store ID</th>
+                      <th>Store Name</th>
+                      <th>Footfall</th>
+                      <th>Revenue</th>
+                        <th>Size (sqft)</th>
+                      <th>Score</th>
+                      <th>Tier</th>
+                    </tr>
+                  </thead>
+
+                  <tbody>
+                    {filteredStores.length > 0 ? (
+                        filteredStores.map(
+                          (store) => (
+                        <tr
+                          key={store.store_id}
+                        >
+                          <td>
+                            {store.store_id}
+                          </td>
+
+                          <td>
+                                {store.store_name}
+                          </td>
+
+                          <td>
+                            {Number(
+                              store.metrics
+                                ?.footfall || 0
+                            ).toLocaleString()}
+                          </td>
+
+                          <td>
+                            {Number(
+                              store.metrics
+                                ?.revenue || 0
+                            ).toLocaleString(
+                              undefined,
+                              {
+                                minimumFractionDigits: 2,
+                                maximumFractionDigits: 2,
+                              }
+                            )}
+                          </td>
+
+                          <td>
+                            {Number(
+                              store.metrics
+                                ?.size_sqft || 0
+                            ).toLocaleString()}
+                          </td>
+
+                          <td>
+                            {store.score_percentage}%
+                          </td>
+
+                          <td>
+                            <span
+                              className={`category-badge ${(
+                                store.tier || ""
+                              ).toLowerCase()}`}
+                            >
+                              {store.tier}
+                            </span>
+                          </td>
+                        </tr>
+                      ))
+                    ) : (
+                      <tr>
+                        <td
+                          colSpan={7}
+                          className="empty-table"
+                        >
+                          No stores found for the
+                          selected tier.
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </Box>
+            </Paper>
+          </Box>
+        </Box>
       </Container>
     </main>
   );

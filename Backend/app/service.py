@@ -128,7 +128,7 @@ def fetch_job_status(job_id: int) -> dict | None:
     pending_records = max(total - processed_records, 0)
 
     failed_records_query = """
-        SELECT DISTINCT s.store_id, s.store_name, e.last_error
+        SELECT DISTINCT s.store_id, s.store_name, e.last_error as failure_reason
         FROM stores s
         JOIN enrichments e ON e.store_id = s.store_id
         WHERE s.job_id = :job_id AND e.status = 'FAILED';
