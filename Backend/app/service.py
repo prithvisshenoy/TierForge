@@ -88,7 +88,8 @@ def process_csv_and_insert_job(contents: bytes, background_tasks, batch_enrichme
             status = 'PENDING',
             retry_count = 0,
             last_error = NULL,
-            updated_at = EXCLUDED.updated_at;
+            updated_at = EXCLUDED.updated_at
+        WHERE enrichments.status='COMPLETED'; 
     """
     execute_statement(bulk_enrichment_sql, enrichment_params)
 
