@@ -11,11 +11,11 @@ class JobStatus(str, enum.Enum):
 
 class TierCalculationRequest(BaseModel):
     job_id: int
-    footfall_bar: int
-    footfall_weight: int        
-    revenue_bar: int    
-    revenue_weight: int
-    size_bar: int
-    size_weight: int
-    large_tier_threshold: int
-    medium_tier_threshold: int
+    footfall_bar: float
+    footfall_weight: float        
+    revenue_bar: float    
+    revenue_weight: float
+    size_bar: float
+    size_weight: float
+    large_tier_threshold: float
+    medium_tier_threshold: float

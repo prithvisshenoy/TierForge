@@ -966,7 +966,7 @@ function App() {
 
             <Box className="metric-row">
               <Typography className="metric-name">
-                Size
+                Size (in sqft)
               </Typography>
 
               <TextField
@@ -1007,7 +1007,7 @@ function App() {
                   fullWidth
                   type="number"
                   size="small"
-                  label="Large Tier Threshold"
+                  label="Large Tier Threshold (%)"
                   value={tierThresholds.large}
                   onChange={handleThresholdChange(
                     "large"
@@ -1023,7 +1023,7 @@ function App() {
                   fullWidth
                   type="number"
                   size="small"
-                  label="Medium Tier Threshold"
+                  label="Medium Tier Threshold (%)"
                   value={tierThresholds.medium}
                   onChange={handleThresholdChange(
                     "medium"
