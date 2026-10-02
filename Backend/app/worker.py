@@ -2,6 +2,7 @@ import asyncio
 import httpx
 from datetime import datetime
 from utils.db_utils import execute_query, execute_statement
+from loguru import logger
 
 ENRICHMENT_API_URL = "http://localhost:8000/enrich"  
 BATCH_SIZE = 50         
@@ -80,75 +81,92 @@ def _sync_job_progress_from_db(job_id: int):
     """
     execute_statement(sql, {"job_id": job_id})
 
+def fetch_store_id(store_id: str):
+    """Fetch a single store record by store_id."""
+    result = execute_query(
+        """
+        SELECT store_id FROM enrichments WHERE store_id = :store_id and status='COMPLETED';
+        """,
+        {"store_id": store_id}
+    )
+    return result[0] if result else None
+
 async def enrich_single_store(
     store: dict, 
     client: httpx.AsyncClient, 
     semaphore: asyncio.Semaphore
 ) -> bool:
-    payload = {
-        "store_id": store["store_id"],
-        "store_name": store["store_name"],
-        "address": store["address"],
-        "city": store["city"],
-        "state": store["state"]
-    }
-    await asyncio.to_thread(
-        _db_update_enrichment_status,
+    store_id = await asyncio.to_thread(
+        fetch_store_id,
         store["store_id"],
-        "PROCESSING",
     )
 
-    backoff = 1.0
+    if not store_id: #Run enrichment API again only if not already successful 
 
-    async with semaphore:
-        for attempt in range(1, MAX_RETRIES + 1):
-            try:
-                response = await client.post(
-                    ENRICHMENT_API_URL, 
-                    json=payload, 
-                    timeout=TIMEOUT_SECONDS
-                )
-
-                if response.status_code == 200:
-                    data = response.json()
-                    await asyncio.to_thread(
-                        _db_save_enrichment_success,
-                        store["store_id"],
-                        data,
-                    )
-                    return True
-
-                last_err = f"HTTP {response.status_code}: {response.text[:200]}"
-                await asyncio.to_thread(
-                    _db_record_retry_error,
-                    store["store_id"],
-                    attempt,
-                    last_err,
-                )
-
-                if attempt < MAX_RETRIES:
-                    await asyncio.sleep(backoff)
-                    backoff *= 2
-
-            except (httpx.TimeoutException, httpx.RequestError) as exc:
-                last_err = f"Request error: {str(exc)[:200]}"
-                await asyncio.to_thread(
-                    _db_record_retry_error,
-                    store["store_id"],
-                    attempt,
-                    last_err,
-                )
-
-                if attempt < MAX_RETRIES:
-                    await asyncio.sleep(backoff)
-                    backoff *= 2
-                    
+        payload = {
+            "store_id": store["store_id"],
+            "store_name": store["store_name"],
+            "address": store["address"],
+            "city": store["city"],
+            "state": store["state"]
+        }
         await asyncio.to_thread(
             _db_update_enrichment_status,
             store["store_id"],
-            "FAILED",
+            "PROCESSING",
         )
-        return False
+
+        backoff = 1.0
+
+        async with semaphore:
+            for attempt in range(1, MAX_RETRIES + 1):
+                try:
+                    response = await client.post(
+                        ENRICHMENT_API_URL, 
+                        json=payload, 
+                        timeout=TIMEOUT_SECONDS
+                    )
+
+                    if response.status_code == 200:
+                        data = response.json()
+                        await asyncio.to_thread(
+                            _db_save_enrichment_success,
+                            store["store_id"],
+                            data,
+                        )
+                        return True
+
+                    last_err = f"HTTP {response.status_code}: {response.text[:200]}"
+                    await asyncio.to_thread(
+                        _db_record_retry_error,
+                        store["store_id"],
+                        attempt,
+                        last_err,
+                    )
+
+                    if attempt < MAX_RETRIES:
+                        await asyncio.sleep(backoff)
+                        backoff *= 2
+
+                except (httpx.TimeoutException, httpx.RequestError) as exc:
+                    last_err = f"Request error: {str(exc)[:200]}"
+                    await asyncio.to_thread(
+                        _db_record_retry_error,
+                        store["store_id"],
+                        attempt,
+                        last_err,
+                    )
+
+                    if attempt < MAX_RETRIES:
+                        await asyncio.sleep(backoff)
+                        backoff *= 2
+                        
+            await asyncio.to_thread(
+                _db_update_enrichment_status,
+                store["store_id"],
+                "FAILED",
+            )
+            return False
 
 
 def _fetch_job_stores(job_id: int):
