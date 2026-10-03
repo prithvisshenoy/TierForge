@@ -2,26 +2,49 @@
 The backend API system for data ingestion, job setting, scoring layer and tier calculations.
 This app contains the main logic behind fetching the data and calling the 3rd party enrichment API. It also calculates the scoring metrics and segregates the data into tiers - Large, Medium, Small.
 
+## Repository Structure
+
+```text
+Backend/
+└── app/                         # FastAPI backend application
+  ├── models/                  # Request and domain models
+  │   └── models.py            # Tier-calculation request schema and job statuses
+  ├── utils/                   # Shared backend utilities
+  │   ├── db_utils.py          # Database connection and query helpers
+  │   └── init.py              # Utility package initialization
+  ├── main.py                  # FastAPI app and HTTP endpoints
+  ├── service.py               # CSV ingestion, job status, and tier calculations
+  ├── worker.py                # Batch enrichment and per-store processing
+  ├── tasks.py                 # Background task wrapper for enrichment jobs (If celery was used, so placeholder for now)
+  ├── sql_commands.sql         # Database schema and indexes (PostgreSQL)
+  ├── requirements.txt         # Python dependencies
+  ├── .env                     # Local database and service configuration (not commiitted to git)
+  └── README.md                # Backend setup and API documentation
+```
+
 ## Run it
 Ensure you are inside the 'app' folder before you run the following.
+```bash
+cd Backend/app
+```
 
 Create a virtual environment
-```
+```bash
 python -m venv .venv
 ```
 
 Activate the environment
-```
+```bash
 .\.venv\Scripts\activate  
 ```
 
 Install the dependencies
-```
+```bash
 pip install -r requirements.txt
 ```
 
 Run the FASTAPI app
-```
+```bash
 uvicorn main:app --port 8002
 ```
 
@@ -272,9 +295,5 @@ Success response (`200`):
   ]
 }
 ```
-
-## Architecture
-
-
 
 ## Limitations

@@ -50,7 +50,6 @@ Ensure you have **Node.js (v18.x or higher)** and **npm / pnpm / yarn** installe
 
 ### 1. Clone the Repository
 ```bash
-git clone https://github.com/prithvisshenoy/TierForge.git
 cd Frontend/tierforge-ui
 ```
 
