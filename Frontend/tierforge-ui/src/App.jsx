@@ -94,50 +94,50 @@ function App() {
   };
 
   const pollJobStatus = async (id) => {
-    try {
-      const data = await getJobStatus(id);
+  try {
+    const data = await getJobStatus(id);
 
-      setProgress(data);
+    setProgress(data);
 
-      const percentage = data.progress?.percentage ?? 0;
+    const percentage = data.progress?.percentage ?? 0;
 
-      const isCompleted =
-        data.status === "COMPLETED" || percentage >= 100;
+    const isCompleted =
+      data.status === "COMPLETED" || percentage >= 100;
 
-      const isFailed =
-        data.status === "FAILED" || data.status === "ERROR";
+    const isFailed =
+      data.status === "FAILED" || data.status === "ERROR";
 
-      if (isCompleted) {
-        setIsUploading(false);
-        return;
-      }
+    if (isCompleted) {
+      setIsUploading(false);
+      return;
+    }
 
-      if (isFailed) {
-        setIsUploading(false);
-
-        setError(
-          data.message ||
-            data.error ||
-            "File processing failed."
-        );
-
-        return;
-      }
-
-      setTimeout(() => {
-        pollJobStatus(id);
-      }, 1000);
-    } catch (error) {
-      console.error(error);
+    if (isFailed) {
+      setIsUploading(false);
 
       setError(
-        error.response?.data?.detail ||
-          "Unable to fetch job status.Please try again later"
+        data.message ||
+          data.error ||
+          "File processing failed."
       );
 
-      setIsUploading(false);
+      return;
     }
-  };
+
+    setTimeout(() => {
+      pollJobStatus(id);
+    }, 1000);
+  } catch (error) {
+    console.error("Job polling failed:", error);
+
+    setError(
+      error.message ||
+        "Unable to fetch job status. Please try again later."
+    );
+
+    setIsUploading(false);
+  }
+};
 
   const handleFileChange = async (selectedFile) => {
     setError("");
@@ -163,34 +163,33 @@ function App() {
   };
 
   const handleUpload = async () => {
-    if (!file) {
-      setError("Please select a CSV file first.");
-      return;
-    }
+  if (!file) {
+    setError("Please select a CSV file first.");
+    return;
+  }
 
-    try {
-      setError("");
-      setIsUploading(true);
-      setProgress(null);
+  try {
+    setError("");
+    setIsUploading(true);
+    setProgress(null);
 
-      const response = await uploadFile(file);
+    const response = await uploadFile(file);
 
-      const id = response.job_id;
+    const id = response.job_id;
 
-      setJobId(id);
+    setJobId(id);
 
-      await pollJobStatus(id);
-    } catch (error) {
-      console.error(error);
+    await pollJobStatus(id);
+  } catch (error) {
+    console.error("Upload failed:", error);
 
-      setError(
-        error.response?.data?.detail ||
-          "Unable to upload file. Please try again later"
-      );
-
-      setIsUploading(false);
-    }
-  };
+    setError(
+      error.message || "Unable to upload file. Please try again later."
+    );
+  } finally {
+    setIsUploading(false);
+  }
+};
 
   const handleBarChange = (field) => (event) => {
     setBars((previous) => ({
@@ -247,25 +246,25 @@ function App() {
     areThresholdsValid;
 
   const handleGetTiers = async () => {
-    if (!areClassificationInputsValid) {
-      return;
-    }
+  if (!areClassificationInputsValid) {
+    return;
+  }
 
-    try {
-      setError("");
-      setIsLoadingStores(true);
+  try {
+    setError("");
+    setIsLoadingStores(true);
 
-      const payload = {
-        job_id: jobId,
+    const payload = {
+      job_id: jobId,
 
-        footfall_bar: Number(bars.footfall),
-        footfall_weight: Number(weights.footfall),
+      footfall_bar: Number(bars.footfall),
+      footfall_weight: Number(weights.footfall),
 
-        revenue_bar: Number(bars.revenue),
-        revenue_weight: Number(weights.revenue),
+      revenue_bar: Number(bars.revenue),
+      revenue_weight: Number(weights.revenue),
 
-        size_bar: Number(bars.size),
-        size_weight: Number(weights.size),
+      size_bar: Number(bars.size),
+      size_weight: Number(weights.size),
 
         large_tier_threshold: Number(
           tierThresholds.large
@@ -274,28 +273,34 @@ function App() {
         medium_tier_threshold: Number(
           tierThresholds.medium
         ),
-      };
+    };
 
-      const data = await getTiers(payload);
+    const data = await getTiers(payload);
 
-      setStores(data.stores || []);
+    setStores(data.stores || []);
 
-      setStoreCounts({
-        large: data.tier_breakdown?.large || 0,
-        medium: data.tier_breakdown?.medium || 0,
-        small: data.tier_breakdown?.small || 0,
-      });
-    } catch (error) {
-      console.error(error);
+    setStoreCounts({
+      large: data.tier_breakdown?.large || 0,
+      medium: data.tier_breakdown?.medium || 0,
+      small: data.tier_breakdown?.small || 0,
+    });
+  } catch (error) {
+    console.error("Tier calculation failed:", error);
 
-      setError(
-        error.response?.data?.detail ||
-          "Unable to calculate store tiers."
-      );
-    } finally {
-      setIsLoadingStores(false);
-    }
-  };
+    setError(
+      error.message || "Unable to calculate store tiers."
+    );
+
+    setStores([]);
+    setStoreCounts({
+      large: 0,
+      medium: 0,
+      small: 0,
+    });
+  } finally {
+    setIsLoadingStores(false);
+  }
+};
 
   const handleReset = () => {
     setFile(null);
