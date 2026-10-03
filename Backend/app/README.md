@@ -296,4 +296,43 @@ Success response (`200`):
 }
 ```
 
-## Limitations
+## Limitations & Future Improvements
+
+### Current Background Job Processing
+
+The current backend implementation uses FastAPI's `BackgroundTasks` to trigger the store-enrichment job. Once a CSV is uploaded, the backend processes the stores in the background and calls the enrichment API to retrieve the required metrics.
+
+While this approach is sufficient for the current implementation, it has an important reliability limitation: the background job is tightly coupled to the lifecycle of the FastAPI application process.
+
+### Known Limitation
+
+If the backend server crashes or is restarted while a job is being processed:
+
+* The background task is terminated along with the application process.
+* The job may remain stuck in the `PROCESSING` state.
+* There is no independent worker process to resume the interrupted job.
+* On application restart, the job would need to be triggered again, potentially resulting in records being processed from the beginning rather than resuming from the last successfully processed record.
+
+This makes the current approach unsuitable for a production-grade, long-running enrichment workload where job durability and fault tolerance are important.
+
+### Proposed Improvement: Celery-Based Worker Architecture
+
+A more robust approach is to decouple the enrichment workload from the FastAPI application by using **Celery workers** with a message broker such as Redis.
+
+With this architecture, FastAPI is responsible only for accepting the upload, creating the job, and exposing job-status APIs. The actual enrichment workload is handled independently by Celery workers.
+
+This provides several benefits:
+
+* **Fault isolation:** A FastAPI server restart does not terminate the worker process.
+* **Durable job execution:** Jobs remain in the broker until they are picked up and acknowledged by a worker.
+* **Retry support:** Failed enrichment requests can be retried using Celery's retry mechanisms.
+* **Resumability:** Job and store-level processing state can be persisted in the database, allowing interrupted jobs to resume from unfinished records rather than starting from scratch.
+* **Scalability:** Multiple Celery workers can process large enrichment jobs concurrently.
+* **Better separation of concerns:** The API layer and long-running background workloads are independently scalable and deployable.
+
+### Implementation Status
+
+A Celery worker implementation has been prepared as part of the project (celery_worker.py). However, full local integration could not be completed within the assignment timeframe due to limitations around setting up and running a local Redis broker in the Windows development environment.
+
+Therefore, the current submitted implementation uses FastAPI `BackgroundTasks`, while the Celery-based architecture represents the recommended approach for a production deployment.
+
