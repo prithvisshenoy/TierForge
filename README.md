@@ -41,7 +41,6 @@ TierForge/
 - **Background processing:** FastAPI background tasks; Celery and Redis packages are also included as task-queue dependencies
 - **Frontend:** React 19, Vite, Material UI
 - **Frontend utilities:** Axios for API requests, PapaParse for CSV parsing
-- **Code quality:** ESLint
 
 # Architecture
 TierForge uses a client-server design. The React frontend handles CSV selection and validation, submits uploads to the FastAPI backend, polls for job progress, and sends scoring thresholds and weights when the user requests tier results.
