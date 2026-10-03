@@ -28,6 +28,14 @@ function UploadScreen({
 
   const percentage = progress?.progress?.percentage ?? 0;
 
+  const totalRecords = progress?.progress?.total_records ?? 0;
+  const successfulRecords =
+    progress?.progress?.successful_records ?? 0;
+  const failedRecords =
+    progress?.progress?.failed_records ?? 0;
+
+  const processedRecords = successfulRecords + failedRecords;
+
   return (
     <Container maxWidth="md" className="upload-page">
       <Paper elevation={0} className="upload-card">
@@ -75,14 +83,36 @@ function UploadScreen({
         {isUploading && (
           <Box className="upload-progress">
             <Stack spacing={1}>
-              <Typography variant="body2">
-                Processing file... {percentage}%
-              </Typography>
+              <Box
+                display="flex"
+                justifyContent="space-between"
+                alignItems="center"
+              >
+                <Typography variant="body2">
+                  Processing file...
+                </Typography>
+
+                <Typography
+                  variant="body2"
+                  fontWeight={600}
+                  color="var(--accent)"
+                >
+                  {percentage}%
+                </Typography>
+              </Box>
 
               <LinearProgress
                 variant="determinate"
                 value={percentage}
               />
+
+              <Typography
+                variant="body2"
+                color="var(--text)"
+              >
+                {processedRecords} of{" "}
+                {totalRecords} records processed
+              </Typography>
             </Stack>
           </Box>
         )}

@@ -44,6 +44,18 @@ TierForge/
 - **Code quality:** ESLint
 
 # Architecture
+TierForge uses a client-server design. The React frontend handles CSV selection and validation, submits uploads to the FastAPI backend, polls for job progress, and sends scoring thresholds and weights when the user requests tier results.
+
+The backend separates request handling from processing and persistence:
+
+1. **Ingestion:** `POST /upload` validates the CSV, creates a job record, stores its input rows in `stores`, and ensures each store has an `enrichments` record.
+2. **Enrichment:** The backend schedules the batch processor with FastAPI `BackgroundTasks`. The processor calls the external enrichment API asynchronously in batches, limits concurrent requests, retries request failures, and writes returned metrics and per-store status to PostgreSQL.
+3. **Progress:** `GET /job/{job_id}` reads the job and enrichment records to report successful, failed, and pending counts for the frontend.
+4. **Scoring and tiering:** `POST /tiers` calculates scores for successfully enriched stores using the supplied thresholds and weights, returns the tier breakdown and store results, and schedules those results to be upserted into `store_tier_results`.
+
+PostgreSQL keeps batch-specific input and status in `jobs` and `stores`. `enrichments` stores metrics and processing status once per unique `store_id`, allowing completed enrichment data to be reused across uploads. `store_tier_results` records the score, tier, and metric snapshots for each job/store pair.
+
+Background enrichment currently runs through FastAPI's in-process `BackgroundTasks`; although Celery-related code and dependencies are present, the upload endpoint does not currently dispatch work to a Celery queue.
 
 
 
