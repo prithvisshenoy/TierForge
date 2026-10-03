@@ -165,7 +165,7 @@ function ClassificationConfig({
         >
           {isLoading
             ? "Calculating..."
-            : "Recalculate Tiers"}
+            : "Calculate Tiers"}
         </Button>
       </Box>
     </Paper>
