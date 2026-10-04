@@ -131,7 +131,7 @@ function App() {
       console.error(error);
 
       setError(
-        error.response?.data?.detail ||
+        error.response?.data?.detail?.message ||
           "Unable to fetch job status.Please try again later"
       );
 
@@ -184,7 +184,7 @@ function App() {
       console.error(error);
 
       setError(
-        error.response?.data?.detail ||
+        error.response?.data?.detail?.message ||
           "Unable to upload file. Please try again later"
       );
 
@@ -289,7 +289,7 @@ function App() {
       console.error(error);
 
       setError(
-        error.response?.data?.detail ||
+        error.response?.data?.detail?.message ||
           "Unable to calculate store tiers."
       );
     } finally {
